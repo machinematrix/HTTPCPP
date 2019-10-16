@@ -3,15 +3,42 @@
 #include <sstream>
 #include <map>
 #include <array>
+#include <limits>
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "Common.h"
+#undef max
 
 #ifdef __linux__
 inline void Sleep(size_t miliseconds)
 {
 	usleep(miliseconds * 1000);
 }
+#endif
+
+#ifdef _WIN32
+//sets socket to non blocking mode on construction
+class NonBlockSocket
+{
+	DescriptorType mSocket;
+	u_long toggle;
+public:
+	NonBlockSocket(DescriptorType sock)
+		:mSocket(sock)
+		,toggle(1)
+	{
+		ioctlsocket(mSocket, FIONBIO, &toggle);
+	}
+
+	~NonBlockSocket()
+	{
+		toggle = 0;
+		ioctlsocket(mSocket, FIONBIO, &toggle);
+	}
+
+	NonBlockSocket(const NonBlockSocket&&) = delete;
+	NonBlockSocket& operator=(const NonBlockSocket&&) = delete;
+};
 #endif
 
 class Http::HttpRequest::Impl
@@ -182,8 +209,8 @@ Http::HttpRequest::HeaderField Http::HttpRequest::Impl::getFieldId(const std::st
 }
 
 Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
-	:mSock(sockWrapper.mSock),
-	mStatus(Status::EMPTY)
+	:mSock(sockWrapper.mSock)
+	,mStatus(Status::EMPTY)
 {
 	using std::string;
 	using std::istringstream;
@@ -191,49 +218,39 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 
 	#ifdef _WIN32
 	int flags = 0;
-	u_long toggle = 1;
-	ioctlsocket(mSock, FIONBIO, &toggle);
+	NonBlockSocket nonBlock(mSock);
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
-
 	int chances = 30;
 	istringstream requestStream;
-	string requestText;// , header;
-	array<std::string::value_type, 16> buffer;
+	string requestText;
+	array<string::value_type, 256> buffer;
+	string::size_type headerEnd = string::npos;
 
 	do
 	{
 		auto bytesRead = recv(mSock, buffer.data(), buffer.size(), flags);
 
-		if (bytesRead != SOCKET_ERROR && bytesRead > 0) {
+		if (bytesRead != SOCKET_ERROR && bytesRead > 0)
+		{
 			requestText.append(buffer.data(), bytesRead);
+			headerEnd = requestText.rfind("\r\n\r\n");
 			chances = 30;
 		}
-		else {
+		else
+		{
 			Sleep(25);
 			--chances;
 		}
 	}
-	while (chances);
-
-	#ifdef _WIN32
-	toggle = 0;
-	ioctlsocket(mSock, FIONBIO, &toggle);
-	#endif
+	while (chances && headerEnd == string::npos);
 
 	if (requestText.empty()) {
 		return;
 	}
 
-	string::size_type headerEnd = requestText.find("\r\n\r\n");
-	if (headerEnd != string::npos) {
-		headerEnd += 4;
-		mBody.insert(mBody.end(), requestText.begin() + headerEnd, requestText.end());
-	}
-
 	requestStream.str(requestText);
-	requestText.clear(); //don't need this anymore.
 
 	requestStream >> mMethod;
 	requestStream >> mResource;
@@ -244,11 +261,9 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 		mVersion.erase(mVersion.begin(), mVersion.begin() + versionBegin);
 	}
 
-	//std::getline(requestStream, header); //consume the end of the first line
-	std::getline(requestStream, requestText); //consume the end of the first line
+	requestStream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-	//while (std::getline(requestStream, header) && header != "\r")
-	for(std::string header; std::getline(requestStream, header) && header != "\r";)
+	for(string header; std::getline(requestStream, header) && header != "\r";)
 	{
 		string::size_type colon = header.find(':');
 		
@@ -273,6 +288,44 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 			mStatus = Status::MALFORMED;
 			return;
 		}
+	}
+
+	if (headerEnd != string::npos)
+	{
+		unsigned contentLength;
+
+		try {
+			contentLength = std::stoul(mFields.at(static_cast<decltype(mFields)::size_type>(HeaderField::ContentLength)));
+		}
+		catch (const std::invalid_argument&) {
+			contentLength = 0;
+		}
+
+		if (contentLength)
+		{
+			mBody.insert(mBody.begin(), requestText.begin() + headerEnd + 4, requestText.end());
+			chances = 30;
+
+			while (mBody.size() < contentLength && chances)
+			{
+				auto bytesRead = recv(mSock, buffer.data(), buffer.size(), flags);
+
+				if (bytesRead != SOCKET_ERROR && bytesRead > 0)
+				{
+					mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
+					chances = 30;
+				}
+				else
+				{
+					Sleep(25);
+					--chances;
+				}
+			}
+		}
+	}
+	else {
+		mStatus = Status::MALFORMED;
+		return;
 	}
 
 	mStatus = Status::OK;

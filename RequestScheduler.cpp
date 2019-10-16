@@ -77,7 +77,7 @@ void PollRequestScheduler::handleRequest(const std::function<void(DescriptorType
 	#ifdef _WIN32
 	int result = WSAPoll(mSockets.data(), mSockets.size(), -1);
 	#elif defined (__linux__)
-	int result = poll(sockets.data(), sockets.size(), -1);
+	int result = poll(mSockets.data(), mSockets.size(), -1);
 	#endif
 
 	if (result != SOCKET_ERROR && result > 0)

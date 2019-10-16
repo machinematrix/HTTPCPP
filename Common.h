@@ -10,7 +10,6 @@
 #include <errno.h>
 #define SOCKET_ERROR (-1)
 #define INVALID_SOCKET (-1)
-#define Sleep(miliseconds) usleep((miliseconds) * 1000)
 using DescriptorType = int;
 inline void CloseSocket(DescriptorType sock)
 {

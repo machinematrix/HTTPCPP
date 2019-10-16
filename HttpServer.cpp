@@ -18,6 +18,7 @@ namespace
 
 class Http::HttpServer::Impl
 {
+	enum class ServerStatus : std::uint8_t { UNINITIALIZED = 1, RUNNING, STOPPED };
 	WinsockLoader mLoader;
 	std::map<std::string, std::function<HandlerCallback>> mHandlers;
 	std::mutex mServerMutex; //to prevent data races between the thread that created the object and the thread that serves requests

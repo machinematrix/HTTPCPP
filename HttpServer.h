@@ -2,9 +2,9 @@
 #define __HTTPSERVERCPP__
 #include <cstdint>
 #include <memory>
-#include <string_view>
 #include <stdexcept>
 #include <functional>
+#include <string_view>
 
 namespace Http
 {
@@ -17,7 +17,7 @@ namespace Http
 	public:
 		using HandlerCallback = void(HttpRequest&);
 		using LoggerCallback = void(const std::string_view&);
-		enum class ServerStatus : std::uint8_t { UNINITIALIZED = 1, RUNNING = 2, STOPPED };
+		
 
 		HttpServer(std::uint16_t mPort);
 		~HttpServer() noexcept;

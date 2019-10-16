@@ -5,6 +5,10 @@
 #include "Common.h"
 #include "ThreadPool.h"
 
+#ifdef __linux__
+#include <poll.h>
+#endif
+
 class IRequestScheduler
 {
 public:
