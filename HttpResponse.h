@@ -1,11 +1,12 @@
 #ifndef __HTTPRESPONSE__
 #define __HTTPRESPONSE__
+#include "ExportMacros.h"
 #include <memory>
 
 namespace Http
 {
-	class HttpRequest;
-	class HttpResponse
+	class EXPORT HttpRequest;
+	class EXPORT HttpResponse
 	{
 		class Impl;
 		std::unique_ptr<Impl> mThis;

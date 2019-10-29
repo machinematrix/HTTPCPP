@@ -1,5 +1,6 @@
 #ifndef __HTTPREQUEST__
 #define __HTTPREQUEST__
+#include "ExportMacros.h"
 #include <memory>
 #include <string_view>
 #include <cstdint>
@@ -8,9 +9,9 @@
 namespace Http
 {
 	struct SocketWrapper;
-	class HttpRequest
+	class EXPORT HttpRequest
 	{
-		friend class HttpResponse;
+		friend class EXPORT HttpResponse;
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:

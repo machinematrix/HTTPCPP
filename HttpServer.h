@@ -1,5 +1,6 @@
 #ifndef __HTTPSERVERCPP__
 #define __HTTPSERVERCPP__
+#include "ExportMacros.h"
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -10,7 +11,7 @@ namespace Http
 {
 	class HttpRequest;
 
-	class HttpServer
+	class EXPORT HttpServer
 	{
 		class Impl;
 		std::unique_ptr<Impl> mThis;
@@ -31,7 +32,7 @@ namespace Http
 	};
 
 	//move to its own file later
-	class HttpServerException : public std::runtime_error
+	class EXPORT HttpServerException : public std::runtime_error
 	{
 		//int errorCode;
 	public:
