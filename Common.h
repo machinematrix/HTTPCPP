@@ -21,9 +21,9 @@ inline void CloseSocket(DescriptorType sock)
 #pragma comment(lib,"ws2_32.lib")
 using ssize_t = SSIZE_T;
 using DescriptorType = SOCKET;
-inline void CloseSocket(DescriptorType mSock)
+inline void CloseSocket(DescriptorType sock)
 {
-	closesocket(mSock);
+	closesocket(sock);
 }
 #endif
 
