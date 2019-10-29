@@ -67,7 +67,8 @@ Http::HttpServer::Impl::~Impl()
 {
 	mStatus.store(ServerStatus::STOPPED);
 	CloseSocket(mSock);
-	mServerThread.join();
+	if(mServerThread.joinable())
+		mServerThread.join();
 }
 
 void Http::HttpServer::Impl::handleRequest(DescriptorType clientSocket) const
