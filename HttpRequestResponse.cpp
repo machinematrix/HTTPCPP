@@ -4,6 +4,8 @@
 #include <map>
 #include <array>
 #include <limits>
+#include <regex>
+#include <iostream>
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "Common.h"
@@ -43,6 +45,7 @@ public:
 
 class Http::HttpRequest::Impl
 {
+	static std::regex requestHeaderFormat, requestLineFormat;
 	WinsockLoader mLoader;
 	std::string mMethod;
 	std::string mResource;
@@ -65,6 +68,15 @@ public:
 	Status getStatus();
 	DescriptorType getSocket();
 };
+
+//[1]: header field
+//[2]: header value
+std::regex Http::HttpRequest::Impl::requestHeaderFormat("([^:]+):[[:space:]]?(.+)\r\n");
+
+//[1]: method
+//[2]: resource
+//[3]: version
+std::regex Http::HttpRequest::Impl::requestLineFormat("([[:upper:]]+) (/[^[:space:]]*) HTTP/([[:digit:]]+\.[[:digit:]]+)\r\n");
 
 const char* Http::HttpRequest::Impl::getFieldText(HeaderField field)
 {
@@ -213,7 +225,6 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 	,mStatus(Status::EMPTY)
 {
 	using std::string;
-	using std::istringstream;
 	using std::array;
 
 	#ifdef _WIN32
@@ -222,11 +233,11 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
-	int chances = 30;
-	istringstream requestStream;
+	unsigned contentLength, chances = 30;
 	string requestText;
 	array<string::value_type, 256> buffer;
 	string::size_type headerEnd = string::npos;
+	std::smatch requestLineMatch;
 
 	do
 	{
@@ -246,86 +257,61 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 	}
 	while (chances && headerEnd == string::npos);
 
-	if (requestText.empty()) {
+	if (requestText.empty())
+		return;
+
+	if (headerEnd == string::npos) {
+		mStatus = Status::MALFORMED;
 		return;
 	}
 
-	requestStream.str(requestText);
-
-	requestStream >> mMethod;
-	requestStream >> mResource;
-	requestStream >> mVersion;
-
-	string::size_type versionBegin = mVersion.find_first_of("1234567890");
-	if (versionBegin != string::npos) {
-		mVersion.erase(mVersion.begin(), mVersion.begin() + versionBegin);
-	}
-
-	requestStream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-
-	for(string header; std::getline(requestStream, header) && header != "\r";)
-	{
-		string::size_type colon = header.find(':');
-		
-		if (colon != std::string::npos)
-		{
-			string::size_type carriageReturn = header.find('\r', colon);
-			
-			if (carriageReturn != string::npos)
-			{
-				HeaderField id = getFieldId(header.substr(0, colon));
-				if (id != HeaderField::Invalid)
-				{
-					mFields[static_cast<size_t>(id)] = header.substr(colon + 1, carriageReturn - colon - 1);
-				}
-			}
-			else {
-				mStatus = Status::MALFORMED;
-				return;
-			}
-		}
-		else {
-			mStatus = Status::MALFORMED;
-			return;
-		}
-	}
-
-	if (headerEnd != string::npos)
-	{
-		unsigned contentLength;
-
-		try {
-			contentLength = std::stoul(mFields.at(static_cast<decltype(mFields)::size_type>(HeaderField::ContentLength)));
-		}
-		catch (const std::invalid_argument&) {
-			contentLength = 0;
-		}
-
-		if (contentLength)
-		{
-			mBody.insert(mBody.begin(), requestText.begin() + headerEnd + 4, requestText.end());
-			chances = 30;
-
-			while (mBody.size() < contentLength && chances)
-			{
-				auto bytesRead = recv(mSock, buffer.data(), buffer.size(), flags);
-
-				if (bytesRead != SOCKET_ERROR && bytesRead > 0)
-				{
-					mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
-					chances = 30;
-				}
-				else
-				{
-					Sleep(25);
-					--chances;
-				}
-			}
-		}
+	if (std::regex_search(requestText, requestLineMatch, requestLineFormat)) {
+		mMethod = requestLineMatch[1];
+		mResource = requestLineMatch[2];
+		mVersion = requestLineMatch[3];
 	}
 	else {
 		mStatus = Status::MALFORMED;
 		return;
+	}
+
+	for (std::sregex_iterator i(requestText.begin(), requestText.end(), requestHeaderFormat), end; i != end; ++i)
+	{
+		HeaderField id = getFieldId((*i)[1]);
+
+		if (id != HeaderField::Invalid)
+		{
+			mFields[static_cast<size_t>(id)] = (*i)[2];
+		}
+	}
+
+	try {
+		contentLength = std::stoul(mFields.at(static_cast<decltype(mFields)::size_type>(HeaderField::ContentLength)));
+	}
+	catch (const std::invalid_argument&) {
+		contentLength = 0;
+	}
+
+	if (contentLength)
+	{
+		mBody.insert(mBody.begin(), requestText.begin() + headerEnd + 4, requestText.end());
+		chances = 30;
+
+		while (mBody.size() < contentLength && chances)
+		{
+			auto bytesRead = recv(mSock, buffer.data(), buffer.size(), flags);
+
+			if (bytesRead != SOCKET_ERROR && bytesRead > 0)
+			{
+				mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
+				chances = 30;
+			}
+			else
+			{
+				Sleep(25);
+				--chances;
+			}
+		}
 	}
 
 	mStatus = Status::OK;
