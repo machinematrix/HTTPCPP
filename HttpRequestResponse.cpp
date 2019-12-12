@@ -43,7 +43,7 @@ public:
 };
 #endif
 
-class Http::HttpRequest::Impl
+class Http::Request::Impl
 {
 	static std::regex requestHeaderFormat, requestLineFormat;
 	WinsockLoader mLoader;
@@ -60,10 +60,10 @@ class Http::HttpRequest::Impl
 public:
 	Impl(const SocketWrapper &mSock);
 
-	std::string_view getMethod();
-	std::string_view getResource();
-	std::string_view getVersion();
-	std::string_view getField(HeaderField field);
+	std::string getMethod();
+	std::string getResource();
+	std::string getVersion();
+	std::string getField(HeaderField field);
 	const std::vector<std::int8_t>& getBody();
 	Status getStatus();
 	DescriptorType getSocket();
@@ -71,14 +71,14 @@ public:
 
 //[1]: header field
 //[2]: header value
-std::regex Http::HttpRequest::Impl::requestHeaderFormat("([^:]+):[[:space:]]?(.+)\r\n");
+std::regex Http::Request::Impl::requestHeaderFormat("([^:]+):[[:space:]]?(.+)\r\n");
 
 //[1]: method
 //[2]: resource
 //[3]: version
-std::regex Http::HttpRequest::Impl::requestLineFormat("([[:upper:]]+) (/[^[:space:]]*) HTTP/([[:digit:]]+\.[[:digit:]]+)\r\n");
+std::regex Http::Request::Impl::requestLineFormat("([[:upper:]]+) (/[^[:space:]]*) HTTP/([[:digit:]]+\\.[[:digit:]]+)\r\n");
 
-const char* Http::HttpRequest::Impl::getFieldText(HeaderField field)
+const char* Http::Request::Impl::getFieldText(HeaderField field)
 {
 	switch (field)
 	{
@@ -165,7 +165,7 @@ const char* Http::HttpRequest::Impl::getFieldText(HeaderField field)
 	}
 }
 
-Http::HttpRequest::HeaderField Http::HttpRequest::Impl::getFieldId(const std::string &field)
+Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string &field)
 {
 	static const std::map<std::string, HeaderField> fieldMap = {
 		{ getFieldText(HeaderField::AIM), HeaderField::AIM },
@@ -220,7 +220,7 @@ Http::HttpRequest::HeaderField Http::HttpRequest::Impl::getFieldId(const std::st
 	return result;
 }
 
-Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
+Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	:mSock(sockWrapper.mSock)
 	,mStatus(Status::EMPTY)
 {
@@ -241,7 +241,7 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 
 	do
 	{
-		auto bytesRead = recv(mSock, buffer.data(), buffer.size(), flags);
+		auto bytesRead = MyRecv(mSock, buffer.data(), buffer.size(), flags);
 
 		if (bytesRead != SOCKET_ERROR && bytesRead > 0)
 		{
@@ -299,7 +299,7 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 
 		while (mBody.size() < contentLength && chances)
 		{
-			auto bytesRead = recv(mSock, buffer.data(), buffer.size(), flags);
+			auto bytesRead = MyRecv(mSock, buffer.data(), buffer.size(), flags);
 
 			if (bytesRead != SOCKET_ERROR && bytesRead > 0)
 			{
@@ -317,37 +317,37 @@ Http::HttpRequest::Impl::Impl(const SocketWrapper &sockWrapper)
 	mStatus = Status::OK;
 }
 
-std::string_view Http::HttpRequest::Impl::getMethod()
+std::string Http::Request::Impl::getMethod()
 {
 	return mMethod;
 }
 
-std::string_view Http::HttpRequest::Impl::getResource()
+std::string Http::Request::Impl::getResource()
 {
 	return mResource;
 }
 
-std::string_view Http::HttpRequest::Impl::getVersion()
+std::string Http::Request::Impl::getVersion()
 {
 	return mVersion;
 }
 
-std::string_view Http::HttpRequest::Impl::getField(HeaderField field)
+std::string Http::Request::Impl::getField(HeaderField field)
 {
 	return mFields[static_cast<size_t>(field)];
 }
 
-const std::vector<std::int8_t>& Http::HttpRequest::Impl::getBody()
+const std::vector<std::int8_t>& Http::Request::Impl::getBody()
 {
 	return mBody;
 }
 
-Http::HttpRequest::Status Http::HttpRequest::Impl::getStatus()
+Http::Request::Status Http::Request::Impl::getStatus()
 {
 	return mStatus;
 }
 
-DescriptorType Http::HttpRequest::Impl::getSocket()
+DescriptorType Http::Request::Impl::getSocket()
 {
 	return mSock;
 }
@@ -359,42 +359,42 @@ DescriptorType Http::HttpRequest::Impl::getSocket()
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::HttpRequest::HttpRequest(const SocketWrapper &sockWrapper)
+Http::Request::Request(const SocketWrapper &sockWrapper)
 	:mThis(new Impl(sockWrapper))
 {}
 
-Http::HttpRequest::~HttpRequest() noexcept = default;
+Http::Request::~Request() noexcept = default;
 
-Http::HttpRequest::HttpRequest(HttpRequest&&) noexcept = default;
+Http::Request::Request(Request&&) noexcept = default;
 
-Http::HttpRequest& Http::HttpRequest::operator=(HttpRequest&&) noexcept = default;
+Http::Request& Http::Request::operator=(Request&&) noexcept = default;
 
-std::string_view Http::HttpRequest::getMethod()
+std::string Http::Request::getMethod()
 {
 	return mThis->getMethod();
 }
 
-std::string_view Http::HttpRequest::getResource()
+std::string Http::Request::getResource()
 {
 	return mThis->getResource();
 }
 
-std::string_view Http::HttpRequest::getVersion()
+std::string Http::Request::getVersion()
 {
 	return mThis->getVersion();
 }
 
-std::string_view Http::HttpRequest::getField(HeaderField field)
+std::string Http::Request::getField(HeaderField field)
 {
 	return mThis->getField(field);
 }
 
-const std::vector<std::int8_t>& Http::HttpRequest::getBody()
+const std::vector<std::int8_t>& Http::Request::getBody()
 {
 	return mThis->getBody();
 }
 
-Http::HttpRequest::Status Http::HttpRequest::getStatus()
+Http::Request::Status Http::Request::getStatus()
 {
 	return mThis->getStatus();
 }
@@ -405,8 +405,9 @@ Http::HttpRequest::Status Http::HttpRequest::getStatus()
 //RESPONSE-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-class Http::HttpResponse::Impl
+class Http::Response::Impl
 {
 	WinsockLoader mLoader;
 	std::map<HeaderField, std::string> mFields;
@@ -417,7 +418,7 @@ class Http::HttpResponse::Impl
 
 	static const char* getFieldText(HeaderField field);
 public:
-	Impl(const HttpRequest&);
+	Impl(const Request&);
 
 	void setBody(const decltype(mBody)&);
 	void setStatusCode(std::uint16_t);
@@ -425,7 +426,7 @@ public:
 	void send();
 };
 
-const char* Http::HttpResponse::Impl::getFieldText(HeaderField field)
+const char* Http::Response::Impl::getFieldText(HeaderField field)
 {
 	switch (field)
 	{
@@ -526,35 +527,35 @@ const char* Http::HttpResponse::Impl::getFieldText(HeaderField field)
 	}
 }
 
-Http::HttpResponse::Impl::Impl(const HttpRequest &request)
+Http::Response::Impl::Impl(const Request &request)
 	:mSock(request.mThis->getSocket()),
 	mStatusCode(0),
 	mVersion("1.1")
 {}
 
-void Http::HttpResponse::Impl::setBody(const decltype(mBody) &newBody)
+void Http::Response::Impl::setBody(const decltype(mBody) &newBody)
 {
 	mBody = newBody;
 }
 
-void Http::HttpResponse::Impl::setStatusCode(std::uint16_t code)
+void Http::Response::Impl::setStatusCode(std::uint16_t code)
 {
 	mStatusCode = code;
 }
 
-void Http::HttpResponse::Impl::setField(HeaderField field, const std::string &value)
+void Http::Response::Impl::setField(HeaderField field, const std::string &value)
 {
 	mFields[field] = value;
 }
 
-void Http::HttpResponse::Impl::send()
+void Http::Response::Impl::send()
 {
 	if (!mStatusCode)
-		return; // TODO: Handle invalid status codes in HttpResponse::Impl::send
+		throw ResponseException("No status code set");
 
 	const char *fieldEnd("\r\n");
 
-	decltype(::send(DescriptorType(), nullptr, 0, 0)) bytesSent = 0;
+	decltype(MySend(DescriptorType(), nullptr, 0, 0)) bytesSent = 0;
 
 	std::string response = "HTTP/" + mVersion + ' ' + std::to_string(mStatusCode) + fieldEnd;
 
@@ -572,13 +573,13 @@ void Http::HttpResponse::Impl::send()
 
 	while (bytesSent < (decltype(bytesSent))response.size())
 	{
-		decltype(bytesSent) auxBytesSent = ::send(mSock, response.data() + bytesSent, response.size() - bytesSent, 0);
+		decltype(bytesSent) auxBytesSent = MySend(mSock, response.data() + bytesSent, response.size() - bytesSent, 0);
 
 		if (auxBytesSent > 0)
 			bytesSent += auxBytesSent;
 		else {
 			break;
-			// TODO: Handle failed writes to socket
+			throw ResponseException("");
 		}
 	}
 }
@@ -590,32 +591,32 @@ void Http::HttpResponse::Impl::send()
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::HttpResponse::HttpResponse(const HttpRequest &request)
+Http::Response::Response(const Request &request)
 	:mThis(new Impl(request))
 {}
 
-Http::HttpResponse::~HttpResponse() noexcept = default;
+Http::Response::~Response() noexcept = default;
 
-Http::HttpResponse::HttpResponse(HttpResponse &&) noexcept = default;
+Http::Response::Response(Response &&) noexcept = default;
 
-Http::HttpResponse& Http::HttpResponse::operator=(HttpResponse&&) noexcept = default;
+Http::Response& Http::Response::operator=(Response&&) noexcept = default;
 
-void Http::HttpResponse::setBody(const std::vector<std::int8_t>& mBody)
+void Http::Response::setBody(const std::vector<std::int8_t>& mBody)
 {
 	mThis->setBody(mBody);
 }
 
-void Http::HttpResponse::setStatusCode(std::uint16_t code)
+void Http::Response::setStatusCode(std::uint16_t code)
 {
 	mThis->setStatusCode(code);
 }
 
-void Http::HttpResponse::setField(HeaderField field, const std::string &value)
+void Http::Response::setField(HeaderField field, const std::string &value)
 {
 	mThis->setField(field, value);
 }
 
-void Http::HttpResponse::send()
+void Http::Response::send()
 {
 	mThis->send();
 }

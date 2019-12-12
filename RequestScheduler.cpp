@@ -1,8 +1,8 @@
 #include "RequestScheduler.h"
 
-ThreadPoolRequestScheduler::ThreadPoolRequestScheduler(unsigned threadCount, DescriptorType mServerSocket)
+ThreadPoolRequestScheduler::ThreadPoolRequestScheduler(unsigned threadCount, DescriptorType serverSocket)
 	:mPool(threadCount)
-	,mServerSocket(mServerSocket)
+	,mServerSocket(serverSocket)
 {}
 
 ThreadPoolRequestScheduler::~ThreadPoolRequestScheduler()
@@ -13,6 +13,7 @@ ThreadPoolRequestScheduler::~ThreadPoolRequestScheduler()
 void ThreadPoolRequestScheduler::handleRequest(const std::function<void(DescriptorType)> &callback)
 {
 	DescriptorType newConnection = accept(mServerSocket, nullptr, nullptr);
+
 	if (newConnection != INVALID_SOCKET)
 	{
 		mPool.addTask(std::bind(callback, newConnection));
@@ -26,12 +27,12 @@ void ThreadPoolRequestScheduler::handleRequest(const std::function<void(Descript
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-SelectRequestScheduler::SelectRequestScheduler(DescriptorType mServerSocket)
-	:mServerSocket(mServerSocket)
-	,mMaxFileDescriptor(mServerSocket)
+SelectRequestScheduler::SelectRequestScheduler(DescriptorType serverSocket)
+	:mServerSocket(serverSocket)
+	,mMaxFileDescriptor(serverSocket)
 {
 	FD_ZERO(&descriptors);
-	FD_SET(mServerSocket, &descriptors);
+	FD_SET(serverSocket, &descriptors);
 }
 
 void SelectRequestScheduler::handleRequest(const std::function<void(DescriptorType)> &callback)
@@ -68,14 +69,14 @@ void SelectRequestScheduler::handleRequest(const std::function<void(DescriptorTy
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-PollRequestScheduler::PollRequestScheduler(DescriptorType mServerSocket)
-	:mSockets(1, PollFileDescriptor{ mServerSocket, POLLIN })
+PollRequestScheduler::PollRequestScheduler(DescriptorType serverSocket)
+	:mSockets(1, PollFileDescriptor{ serverSocket, POLLIN })
 {}
 
 void PollRequestScheduler::handleRequest(const std::function<void(DescriptorType)> &callback)
 {
 	#ifdef _WIN32
-	int result = WSAPoll(mSockets.data(), mSockets.size(), -1);
+	int result = WSAPoll(mSockets.data(), static_cast<ULONG>(mSockets.size()), -1);
 	#elif defined (__linux__)
 	int result = poll(mSockets.data(), mSockets.size(), -1);
 	#endif
@@ -84,21 +85,96 @@ void PollRequestScheduler::handleRequest(const std::function<void(DescriptorType
 	{
 		for (decltype(mSockets)::size_type i = 0; i < mSockets.size();)
 		{
-			if (mSockets[i].revents & POLLIN)
+			if (i && (mSockets[i].revents & POLLHUP)) //if the other side disconnected, close the socket.
+			{
+				CloseSocket(mSockets[i].fd);
+				mSockets.erase(mSockets.begin() + i);
+			}
+			else
+			{
+				if (mSockets[i].revents & POLLIN)
+				{
+					if (!i) //if it's the server socket
+					{
+						DescriptorType clientSocket = accept(mSockets[i].fd, nullptr, nullptr);
+						if (clientSocket != SOCKET_ERROR) {
+							mSockets.push_back({ clientSocket, POLLIN });
+							++i;
+						}
+					}
+					else
+					{
+						callback(mSockets[i].fd);
+						mSockets.erase(mSockets.begin() + i);
+					}
+				}
+				else
+					++i;
+			}
+		}
+	}
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+RequestScheduler::RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t socketTimeout)
+	:pool(threadCount),
+	 mSockets(1, PollFileDescriptor{ serverSocket, POLLIN }),
+	 socketTimeout(socketTimeout)
+{}
+
+RequestScheduler::~RequestScheduler()
+{
+	pool.waitForTasks();
+	for (decltype(mSockets)::size_type i = 1, sz = mSockets.size(); i < sz; ++i) { //close every socket except the one on listening mode
+		CloseSocket(mSockets[i].fd);
+	}
+}
+
+// TODO: implement socket timeout
+void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &callback)
+{
+	#ifdef _WIN32
+	int result = WSAPoll(mSockets.data(), static_cast<ULONG>(mSockets.size()), -1);
+	#elif defined (__linux__)
+	int result = poll(mSockets.data(), mSockets.size(), -1);
+	#endif
+
+	if (result != SOCKET_ERROR && result > 0)
+	{
+		//for (decltype(mSockets)::iterator it = mSockets.begin(); it != mSockets.end();) //can't use this: reallocations invalidate iterators
+		for (decltype(mSockets)::size_type i = 0; i < mSockets.size();)
+		{
+			if (mSockets[i].revents & POLLHUP && i) //if the other side disconnected, close the socket.
+			{
+				CloseSocket(mSockets[i].fd);
+				mSockets.erase(mSockets.begin() + i);
+			}
+			else if (mSockets[i].revents & POLLERR && i) //if I closed the after handling the request, stop monitoring it 
+			{
+				mSockets.erase(mSockets.begin() + i);
+			}
+			else if (mSockets[i].revents & POLLIN)
 			{
 				if (!i) //if it's the server socket
 				{
 					DescriptorType clientSocket = accept(mSockets[i].fd, nullptr, nullptr);
 					if (clientSocket != SOCKET_ERROR) {
 						mSockets.push_back({ clientSocket, POLLIN });
-						++i;
 					}
 				}
 				else
 				{
-					callback(mSockets[i].fd);
-					mSockets.erase(mSockets.begin() + i);
+					callback(mSockets[i].fd); // TODO: find a way to use thread pool: a socket that is being served might still wake up WSAPoll because the other thread might not be over reading from it yet
+					//pool.addTask(std::bind(callback, mSockets[i].fd));
+					//mSockets.erase(it); //can't do this: socket could still be open after handling request due to keep-alive
 				}
+				++i;
 			}
 			else
 				++i;

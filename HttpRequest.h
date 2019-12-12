@@ -2,36 +2,36 @@
 #define __HTTPREQUEST__
 #include "ExportMacros.h"
 #include <memory>
-#include <string_view>
+#include <string>
 #include <cstdint>
 #include <vector>
 
 namespace Http
 {
 	struct SocketWrapper;
-	class EXPORT HttpRequest
+	class EXPORT Request
 	{
-		friend class EXPORT HttpResponse;
+		friend class EXPORT Response;
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:
 		enum class HeaderField : std::size_t;
 		enum class Status { OK, MALFORMED, EMPTY };
 
-		HttpRequest(const SocketWrapper&);
-		~HttpRequest() noexcept;
-		HttpRequest(HttpRequest&&) noexcept;
-		HttpRequest& operator=(HttpRequest&&) noexcept;
+		Request(const SocketWrapper&);
+		~Request() noexcept;
+		Request(Request&&) noexcept;
+		Request& operator=(Request&&) noexcept;
 
-		std::string_view getMethod();
-		std::string_view getResource();
-		std::string_view getVersion();
-		std::string_view getField(HeaderField field);
+		std::string getMethod();
+		std::string getResource();
+		std::string getVersion();
+		std::string getField(HeaderField field);
 		const std::vector<std::int8_t>& getBody();
 		Status getStatus();
 	};
 
-	enum class HttpRequest::HeaderField : std::size_t //https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Standard_request_fields
+	enum class Request::HeaderField : std::size_t //https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Standard_request_fields
 	{
 		AIM,
 		Accept,

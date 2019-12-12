@@ -10,13 +10,13 @@
 
 namespace
 {
-	void placeholderLogger(const std::string_view&)
+	void placeholderLogger(const std::string&)
 	{
 
 	}
 }
 
-class Http::HttpServer::Impl
+class Http::Server::Impl
 {
 	enum class ServerStatus : std::uint8_t { UNINITIALIZED = 1, RUNNING, STOPPED };
 	WinsockLoader mLoader;
@@ -25,7 +25,7 @@ class Http::HttpServer::Impl
 	std::thread mServerThread;
 	std::condition_variable mStatusChanged;
 	
-	std::function<LoggerCallback> mLogger; //pointer (4|8 bytes)
+	std::function<LoggerCallback> mEndpointLogger; //pointer (4|8 bytes)
 	DescriptorType mSock;
 	const int mQueueLength = 5;
 	std::uint16_t mPort;
@@ -42,7 +42,7 @@ public:
 	void setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback);
 };
 
-void Http::HttpServer::Impl::serverProcedure()
+void Http::Server::Impl::serverProcedure()
 {
 	if (listen(mSock, mQueueLength) != SOCKET_ERROR) {
 		mStatus.store(ServerStatus::RUNNING);
@@ -53,9 +53,10 @@ void Http::HttpServer::Impl::serverProcedure()
 
 	mStatusChanged.notify_all();
 
-	std::unique_ptr<IRequestScheduler> scheduler(new ThreadPoolRequestScheduler(4, mSock));
+	//std::unique_ptr<IRequestScheduler> scheduler(new ThreadPoolRequestScheduler(4, mSock));
 	//std::unique_ptr<IRequestScheduler> scheduler(new SelectRequestScheduler(mSock));
 	//std::unique_ptr<IRequestScheduler> scheduler(new PollRequestScheduler(mSock));
+	std::unique_ptr<IRequestScheduler> scheduler(new RequestScheduler(mSock, 8, 5000));
 
 	while (mStatus.load() == ServerStatus::RUNNING)
 	{
@@ -63,7 +64,7 @@ void Http::HttpServer::Impl::serverProcedure()
 	}
 }
 
-Http::HttpServer::Impl::~Impl()
+Http::Server::Impl::~Impl()
 {
 	mStatus.store(ServerStatus::STOPPED);
 	CloseSocket(mSock);
@@ -71,17 +72,17 @@ Http::HttpServer::Impl::~Impl()
 		mServerThread.join();
 }
 
-void Http::HttpServer::Impl::handleRequest(DescriptorType clientSocket) const
+void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 {
-	HttpRequest request(SocketWrapper{ clientSocket });
+	Request request(SocketWrapper{ clientSocket });
 	
-	if (request.getStatus() == HttpRequest::Status::OK)
+	if (request.getStatus() == Request::Status::OK)
 	{
 		decltype(mHandlers)::const_iterator bestMatch = mHandlers.cend();
 
 		for (decltype(mHandlers)::const_iterator handlerSlot = mHandlers.cbegin(); handlerSlot != mHandlers.cend(); ++handlerSlot)
 		{
-			std::string_view requestResource = request.getResource();
+			std::string requestResource = request.getResource();
 			std::string::size_type lastSlash = requestResource.rfind('/');
 
 			if (lastSlash != std::string::npos)
@@ -105,25 +106,28 @@ void Http::HttpServer::Impl::handleRequest(DescriptorType clientSocket) const
 				std::string logMessage("Served request at endpoint \"");
 				logMessage += bestMatch->first;
 				logMessage.push_back('\"');
-				mLogger(logMessage);
+				mEndpointLogger(logMessage);
 			}
 			catch (const std::exception&) {
 				std::string msg("Unexpected exception thrown at endpoint \"");
 				msg.append(bestMatch->first);
 				msg.append("\" handler");
-				mLogger(msg);
+				mEndpointLogger(msg);
 			}
 		}
+
+		if (request.getField(Request::HeaderField::Connection) == "keep-alive")
+			return; //return without closing socket
 	}
 
 	CloseSocket(clientSocket);
 }
 
-Http::HttpServer::Impl::Impl(std::uint16_t mPort)
+Http::Server::Impl::Impl(std::uint16_t mPort)
 	try :mSock(socket(AF_INET, SOCK_STREAM, 0)),
 	mPort(mPort),
 	mStatus(ServerStatus::UNINITIALIZED),
-	mLogger(placeholderLogger)
+	mEndpointLogger(placeholderLogger)
 {
 	char optval[8] = {};
 	const char *error = "Could not create server";
@@ -131,10 +135,10 @@ Http::HttpServer::Impl::Impl(std::uint16_t mPort)
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPtr(nullptr, freeaddrinfo);
 
 	if (mSock == INVALID_SOCKET)
-		throw HttpServerException("Could not create socket");
+		throw ServerException("Could not create socket");
 
 	if (setsockopt(mSock, SOL_SOCKET, SO_REUSEADDR, optval, sizeof(optval)))
-		throw HttpServerException(error);
+		throw ServerException(error);
 
 	{
 		addrinfo *list = NULL, hint = { 0 };
@@ -143,20 +147,20 @@ Http::HttpServer::Impl::Impl(std::uint16_t mPort)
 		hint.ai_socktype = SOCK_STREAM;
 		hint.ai_protocol = IPPROTO_TCP;
 		if (getaddrinfo(nullptr, strPort.c_str(), &hint, &list))
-			throw HttpServerException(error);
+			throw ServerException(error);
 		addressListPtr.reset(list);
 	}
 
 	auto len = addressListPtr->ai_addrlen;
 
 	if (bind(mSock, addressListPtr->ai_addr, len) == SOCKET_ERROR)
-		throw HttpServerException(error);
+		throw ServerException(error);
 }
 catch (const std::runtime_error e) {
-	throw HttpServerException(e.what());
+	throw ServerException(e.what());
 }
 
-void Http::HttpServer::Impl::start()
+void Http::Server::Impl::start()
 {
 	mServerThread = std::thread(&Impl::serverProcedure, this);
 	std::unique_lock<std::mutex> lck(mServerMutex);
@@ -164,16 +168,16 @@ void Http::HttpServer::Impl::start()
 	mStatusChanged.wait(lck, [this]() -> bool { return mStatus.load() != ServerStatus::UNINITIALIZED; });
 
 	if (mStatus.load() != ServerStatus::RUNNING) {
-		throw HttpServerException("Could not start server");
+		throw ServerException("Could not start server");
 	}
 }
 
-void Http::HttpServer::Impl::setLogger(const std::function<LoggerCallback> &callback) noexcept
+void Http::Server::Impl::setLogger(const std::function<LoggerCallback> &callback) noexcept
 {
-	mLogger = (callback ? callback : placeholderLogger);
+	mEndpointLogger = (callback ? callback : placeholderLogger);
 }
 
-void Http::HttpServer::Impl::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
+void Http::Server::Impl::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
 {
 	mHandlers[path] = callback;
 }
@@ -185,36 +189,27 @@ void Http::HttpServer::Impl::setResourceCallback(const std::string &path, const 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::HttpServer::HttpServer(std::uint16_t mPort)
+Http::Server::Server(std::uint16_t mPort)
 	:mThis(new Impl(mPort))
 {}
 
-Http::HttpServer::~HttpServer() noexcept = default;
+Http::Server::~Server() noexcept = default;
 
-Http::HttpServer::HttpServer(HttpServer &&other) noexcept = default;
+Http::Server::Server(Server &&other) noexcept = default;
 
-Http::HttpServer& Http::HttpServer::operator=(HttpServer &&other) noexcept = default;
+Http::Server& Http::Server::operator=(Server &&other) noexcept = default;
 
-void Http::HttpServer::start()
+void Http::Server::start()
 {
 	mThis->start();
 }
 
-void Http::HttpServer::setLogger(const std::function<LoggerCallback> &callback) noexcept
+void Http::Server::setLogger(const std::function<LoggerCallback> &callback) noexcept
 {
 	mThis->setLogger(callback);
 }
 
-void Http::HttpServer::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
+void Http::Server::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
 {
 	mThis->setResourceCallback(path, callback);
 }
-
-Http::HttpServerException::HttpServerException(const std::string &msg)
-	:runtime_error(msg)
-	/*#ifdef _WIN32
-	,errorCode(WSAGetLastError())
-	#elif defined(__linux__)
-	,errorCode(errno)
-	#endif*/
-{}

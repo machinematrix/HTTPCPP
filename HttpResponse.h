@@ -5,17 +5,17 @@
 
 namespace Http
 {
-	class EXPORT HttpRequest;
-	class EXPORT HttpResponse
+	class EXPORT Request;
+	class EXPORT Response
 	{
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:
 		enum class HeaderField;
-		HttpResponse(const HttpRequest&);
-		~HttpResponse() noexcept;
-		HttpResponse(HttpResponse&&) noexcept;
-		HttpResponse& operator=(HttpResponse&&) noexcept;
+		Response(const Request&);
+		~Response() noexcept;
+		Response(Response&&) noexcept;
+		Response& operator=(Response&&) noexcept;
 
 		void setBody(const std::vector<std::int8_t> &mBody);
 		void setStatusCode(std::uint16_t code);
@@ -23,7 +23,9 @@ namespace Http
 		void send();
 	};
 
-	enum class HttpResponse::HeaderField //https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Standard_response_fields
+	using ResponseException = std::runtime_error;
+
+	enum class Response::HeaderField //https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Standard_response_fields
 	{
 		AccessControlAllowOrigin,
 		AccessControlAllowCredentials,

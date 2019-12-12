@@ -5,25 +5,25 @@
 #include <memory>
 #include <stdexcept>
 #include <functional>
-#include <string_view>
+#include <string>
 
 namespace Http
 {
-	class HttpRequest;
+	class Request;
 
-	class EXPORT HttpServer
+	class EXPORT Server
 	{
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:
-		using HandlerCallback = void(HttpRequest&);
-		using LoggerCallback = void(const std::string_view&);
+		using HandlerCallback = void(Request&);
+		using LoggerCallback = void(const std::string&);
 		
 
-		HttpServer(std::uint16_t mPort);
-		~HttpServer() noexcept;
-		HttpServer(HttpServer&&) noexcept;
-		HttpServer& operator=(HttpServer&&) noexcept;
+		Server(std::uint16_t mPort);
+		~Server() noexcept;
+		Server(Server&&) noexcept;
+		Server& operator=(Server&&) noexcept;
 
 		void start();
 		//pass nullptr to remove current logger
@@ -31,13 +31,7 @@ namespace Http
 		void setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback);
 	};
 
-	//move to its own file later
-	class EXPORT HttpServerException : public std::runtime_error
-	{
-		//int errorCode;
-	public:
-		HttpServerException(const std::string &msg);
-	};
+	using ServerException = std::runtime_error;
 }
 
 #endif
