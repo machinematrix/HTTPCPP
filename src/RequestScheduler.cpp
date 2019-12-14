@@ -154,7 +154,7 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 	#ifdef _WIN32
 	int result = WSAPoll(mSockets.data(), static_cast<ULONG>(mSockets.size()), 1000);
 	#elif defined (__linux__)
-	int result = poll(mSockets.data(), mSockets.size(), socketTimeout, 1000);
+	int result = poll(mSockets.data(), mSockets.size(), 1000);
 	#endif
 
 	if (result != SOCKET_ERROR /*&& result > 0*/)

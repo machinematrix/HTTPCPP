@@ -2,6 +2,8 @@
 #define __HTTPRESPONSE__
 #include "ExportMacros.h"
 #include <memory>
+#include <vector>
+#include <string>
 
 namespace Http
 {
@@ -17,7 +19,8 @@ namespace Http
 		Response(Response&&) noexcept;
 		Response& operator=(Response&&) noexcept;
 
-		void setBody(const std::vector<std::int8_t> &mBody);
+		void setBody(const std::vector<std::uint8_t> &body);
+		void setBody(const std::string &body);
 		void setStatusCode(std::uint16_t code);
 		void setField(HeaderField field, const std::string &value);
 		void send();

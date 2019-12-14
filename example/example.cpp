@@ -5,7 +5,6 @@
 
 namespace FilesystemNamespace = std::filesystem;
 
-void hello(Http::Request&);
 void redirect(Http::Request&);
 void favicon(Http::Request&);
 void list(Http::Request&);
@@ -76,9 +75,9 @@ std::vector<std::wstring> getJpgs(const std::string &directory)
 	return result;
 }
 
-std::vector<char> loadFile(const std::string &fileName)
+std::vector<std::uint8_t> loadFile(const std::string &fileName)
 {
-	std::vector<char> result;
+	std::vector<std::uint8_t> result;
 	std::streampos size;
 	std::ifstream file(fileName, std::ios::binary | std::ios::ate);
 
@@ -94,7 +93,7 @@ std::vector<char> loadFile(const std::string &fileName)
 			result.resize(size);
 
 			while (file) {
-				file.read(result.data() + bytesRead, 512);
+				file.read((char*)(result.data()) + bytesRead, 512);
 				bytesRead += file.gcount();
 			}
 		}

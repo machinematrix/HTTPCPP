@@ -27,7 +27,7 @@ namespace Http
 		std::string getResourcePath();
 		std::string getVersion();
 		std::string getField(HeaderField field);
-		const std::vector<std::int8_t>& getBody();
+		const std::vector<std::uint8_t>& getBody();
 		Status getStatus();
 	};
 

@@ -1,8 +1,8 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-#include "HttpRequest.h"
 #include "HttpResponse.h"
+#include "HttpRequest.h"
 
 namespace std
 {
@@ -27,11 +27,13 @@ namespace
 
 std::vector<std::wstring> filenames(const std::string&);
 std::vector<std::wstring> getJpgs(const std::string&);
-std::vector<char> loadFile(const std::string&);
+std::vector<std::uint8_t> loadFile(const std::string&);
+
+using Http::Response;
+using Http::Request;
 
 void redirect(Http::Request &req)
 {
-	using Http::Response;
 	Response resp(req);
 
 	resp.setStatusCode(303);
@@ -47,9 +49,8 @@ void redirect(Http::Request &req)
 	resp.send();
 }
 
-void favicon(Http::Request &req)
+void favicon(Request &req)
 {
-	using Http::Response;
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
 		return;
@@ -62,14 +63,14 @@ void favicon(Http::Request &req)
 	if (!fileBytes.empty()) {
 		resp.setStatusCode(200);
 		resp.setField(Response::HeaderField::ContentType, "image/x-icon");
-		resp.setField(Response::HeaderField::ContentLength, std::to_string(fileBytes.size()).c_str());
+		resp.setField(Response::HeaderField::ContentLength, std::to_string(fileBytes.size()));
 
 		if (req.getField(Http::Request::HeaderField::Connection) == "keep-alive")
 			resp.setField(Response::HeaderField::Connection, "keep-alive");
 		else
 			resp.setField(Response::HeaderField::Connection, "close");
 
-		resp.setBody({ fileBytes.begin(), fileBytes.end() });
+		resp.setBody(fileBytes);
 	}
 	else
 		resp.setStatusCode(404);
@@ -77,10 +78,8 @@ void favicon(Http::Request &req)
 	resp.send();
 }
 
-void list(Http::Request &req)
+void list(Request &req)
 {
-	using Http::Response;
-	using Http::Request;
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
 		return;
@@ -100,7 +99,7 @@ void list(Http::Request &req)
 
 	resp.setStatusCode(200);
 	resp.setField(Response::HeaderField::ContentType, "text/html");
-	resp.setField(Response::HeaderField::ContentLength, std::to_string(mBody.size()).c_str());
+	resp.setField(Response::HeaderField::ContentLength, std::to_string(mBody.size()));
 	resp.setField(Response::HeaderField::CacheControl, "no-store");
 
 	if(req.getField(Http::Request::HeaderField::Connection) == "keep-alive")
@@ -108,14 +107,13 @@ void list(Http::Request &req)
 	else
 		resp.setField(Response::HeaderField::Connection, "close");
 
-	resp.setBody({ mBody.begin(), mBody.end() });
+	resp.setBody(mBody);
 
 	resp.send();
 }
 
-void image(Http::Request &req)
+void image(Request &req)
 {
-	using Http::Response;
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
 		return;
@@ -128,7 +126,7 @@ void image(Http::Request &req)
 		Response resp(req);
 
 		resp.setStatusCode(200);
-		resp.setField(Response::HeaderField::ContentLength, std::to_string(fileBytes.size()).c_str());
+		resp.setField(Response::HeaderField::ContentLength, std::to_string(fileBytes.size()));
 		resp.setField(Response::HeaderField::ContentType, "image/jpeg");
 		resp.setField(Response::HeaderField::CacheControl, "no-store");
 
@@ -137,7 +135,7 @@ void image(Http::Request &req)
 		else
 			resp.setField(Response::HeaderField::Connection, "close");
 
-		resp.setBody({ fileBytes.begin(), fileBytes.end() });
+		resp.setBody(fileBytes);
 
 		resp.send();
 	}

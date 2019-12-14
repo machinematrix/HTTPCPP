@@ -1,5 +1,5 @@
-#ifndef __REQUEST_SCHDULER__
-#define __REQUEST_SCHDULER__
+#ifndef __REQUEST_SCHEDULER__
+#define __REQUEST_SCHEDULER__
 #include <functional>
 #include <vector>
 #include <chrono>

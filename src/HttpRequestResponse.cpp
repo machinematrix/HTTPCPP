@@ -55,7 +55,7 @@ class Http::Request::Impl
 	std::string mResource;
 	std::string mVersion;
 	std::array<std::string, static_cast<size_t>(HeaderField::Warning) + 1u> mFields;
-	std::vector<std::int8_t> mBody;
+	std::vector<std::uint8_t> mBody;
 	std::map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
 	Status mStatus;
@@ -69,7 +69,7 @@ public:
 	std::string getResourcePath();
 	std::string getVersion();
 	std::string getField(HeaderField field);
-	const std::vector<std::int8_t>& getBody();
+	const decltype(mBody)& getBody();
 	Status getStatus();
 	DescriptorType getSocket();
 };
@@ -364,7 +364,7 @@ std::string Http::Request::Impl::getField(HeaderField field)
 	return mFields[static_cast<size_t>(field)];
 }
 
-const std::vector<std::int8_t>& Http::Request::Impl::getBody()
+const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
 {
 	return mBody;
 }
@@ -416,7 +416,7 @@ std::string Http::Request::getField(HeaderField field)
 	return mThis->getField(field);
 }
 
-const std::vector<std::int8_t>& Http::Request::getBody()
+const std::vector<std::uint8_t>& Http::Request::getBody()
 {
 	return mThis->getBody();
 }
@@ -439,7 +439,7 @@ class Http::Response::Impl
 	WinsockLoader mLoader;
 	std::map<HeaderField, std::string> mFields;
 	std::string mVersion;
-	std::vector<int8_t> mBody;
+	std::vector<uint8_t> mBody;
 	DescriptorType mSock;
 	std::uint16_t mStatusCode;
 
@@ -448,6 +448,7 @@ public:
 	Impl(const Request&);
 
 	void setBody(const decltype(mBody)&);
+	void setBody(const std::string&);
 	void setStatusCode(std::uint16_t);
 	void setField(HeaderField field, const std::string &value);
 	void send();
@@ -565,6 +566,11 @@ void Http::Response::Impl::setBody(const decltype(mBody) &newBody)
 	mBody = newBody;
 }
 
+void Http::Response::Impl::setBody(const std::string &body)
+{
+	mBody = decltype(mBody)(body.begin(), body.end());
+}
+
 void Http::Response::Impl::setStatusCode(std::uint16_t code)
 {
 	mStatusCode = code;
@@ -628,7 +634,12 @@ Http::Response::Response(Response &&) noexcept = default;
 
 Http::Response& Http::Response::operator=(Response&&) noexcept = default;
 
-void Http::Response::setBody(const std::vector<std::int8_t>& mBody)
+void Http::Response::setBody(const std::vector<std::uint8_t>& mBody)
+{
+	mThis->setBody(mBody);
+}
+
+void Http::Response::setBody(const std::string &mBody)
 {
 	mThis->setBody(mBody);
 }

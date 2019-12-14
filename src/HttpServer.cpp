@@ -7,6 +7,7 @@
 #include "Common.h"
 #include "HttpServer.h"
 #include "HttpRequest.h"
+#include "HttpResponse.h"
 #include "RequestScheduler.h"
 
 namespace
@@ -108,6 +109,13 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 				logMessage += bestMatch->first;
 				logMessage.push_back('\"');
 				mEndpointLogger(logMessage);
+			}
+			catch (const ResponseException &e) {
+				std::string msg("Exception throw at endpoint ");
+				msg.append(bestMatch->first);
+				msg.append(": ");
+				msg.append(e.what());
+				mEndpointLogger(msg);
 			}
 			catch (const std::exception&) {
 				std::string msg("Unexpected exception thrown at endpoint \"");
