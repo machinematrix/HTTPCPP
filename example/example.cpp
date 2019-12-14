@@ -53,7 +53,7 @@ std::vector<std::wstring> filenames(const std::string &directory)
 	directory_iterator iterator(directory), end;
 
 	while (iterator != end) {
-		result.push_back(iterator->path().wstring());
+		result.push_back(iterator->path().filename().wstring());
 		++iterator;
 	}
 
@@ -105,9 +105,7 @@ std::vector<char> loadFile(const std::string &fileName)
 
 void logger(const std::string &msg)
 {
-	using std::cout;
-	using std::endl;
-	cout << msg << endl;
+	std::cout << msg << std::endl;
 }
 
 int main()
@@ -115,23 +113,10 @@ int main()
 	using std::cout;
 	using std::endl;
 	using std::cin;
-	
-	//ThreadPool pool(4);
-
-	//pool.addTask(std::bind(callback, 1));
-	//pool.addTask(std::bind(callback, 2));
-	//pool.addTask(std::bind(callback, 3));
-	//pool.addTask(std::bind(callback, 4));
-	//pool.addTask(std::bind(callback, 5));
-	//pool.addTask(std::bind(callback, 6));
-	//pool.addTask(std::bind(callback, 7));
-	//pool.addTask(std::bind(callback, 8));
-
-	//pool.waitForTasks();
 
 	try {
 		std::string input;
-		Http::Server sv(80);
+		Http::Server sv(80); //you'll need root privileges to start a server on ports under 1024
 
 		for (const auto &fileName : getJpgs(".")) {
 			sv.setResourceCallback(("/" + std::to_string(fileName)).c_str(), image);
@@ -140,7 +125,6 @@ int main()
 		sv.setResourceCallback("/list", list);
 		sv.setResourceCallback("/", redirect);
 		sv.setResourceCallback("/favicon.ico", favicon);
-		sv.setResourceCallback("/kill", kill);
 		sv.setLogger(logger);
 		sv.start();
 
