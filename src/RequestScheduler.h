@@ -2,6 +2,9 @@
 #define __REQUEST_SCHDULER__
 #include <functional>
 #include <vector>
+#include <chrono>
+#include <tuple>
+#include <atomic>
 #include "Common.h"
 #include "ThreadPool.h"
 
@@ -58,11 +61,22 @@ class RequestScheduler : public IRequestScheduler
 	using PollFileDescriptor = pollfd;
 	#endif
 
+	struct SocketInfo
+	{
+		std::atomic<bool> isBeingServed;
+		std::chrono::steady_clock::time_point creationTimePoint;
+
+		SocketInfo(const std::chrono::steady_clock::time_point &creation);
+		SocketInfo(const SocketInfo&);
+		SocketInfo& operator=(const SocketInfo&);
+	};
+
 	ThreadPool pool;
 	std::vector<PollFileDescriptor> mSockets;
-	std::uint32_t socketTimeout; //in milliseconds. socket will automatically close if there are no incoming connections for at least this amount of time
+	std::vector<SocketInfo> socketInfo; //in tuple: time_point is the time at which the socket was created. atomic flag indicates whether a worker thread is reading from that socket.
+	std::chrono::milliseconds socketTimeToLive; //in milliseconds. socket will automatically close if there are no incoming connections for at least this amount of time
 public:
-	RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t socketTimeout);
+	RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t socketTimeToLive);
 	~RequestScheduler();
 	virtual void handleRequest(const std::function<void(DescriptorType)> &callback) override;
 };

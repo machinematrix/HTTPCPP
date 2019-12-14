@@ -83,7 +83,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 
 		for (decltype(mHandlers)::const_iterator handlerSlot = mHandlers.cbegin(); handlerSlot != mHandlers.cend(); ++handlerSlot)
 		{
-			std::string requestResource = request.getResource();
+			std::string requestResource = request.getResourcePath();
 			std::string::size_type lastSlash = requestResource.rfind('/');
 
 			if (lastSlash != std::string::npos)

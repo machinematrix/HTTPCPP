@@ -5,10 +5,14 @@
 #include <array>
 #include <limits>
 #include <regex>
-#include <iostream>
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "Common.h"
+
+#ifndef NDEBUG
+#include <iostream>
+#endif
+
 #undef max
 
 #ifdef __linux__
@@ -45,13 +49,14 @@ public:
 
 class Http::Request::Impl
 {
-	static std::regex requestHeaderFormat, requestLineFormat;
+	static std::regex requestHeaderFormat, requestLineFormat, queryStringFormat, queryStringParams;
 	WinsockLoader mLoader;
 	std::string mMethod;
 	std::string mResource;
 	std::string mVersion;
 	std::array<std::string, static_cast<size_t>(HeaderField::Warning) + 1u> mFields;
 	std::vector<std::int8_t> mBody;
+	std::map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
 	Status mStatus;
 
@@ -61,7 +66,7 @@ public:
 	Impl(const SocketWrapper &mSock);
 
 	std::string getMethod();
-	std::string getResource();
+	std::string getResourcePath();
 	std::string getVersion();
 	std::string getField(HeaderField field);
 	const std::vector<std::int8_t>& getBody();
@@ -77,6 +82,15 @@ std::regex Http::Request::Impl::requestHeaderFormat("([^:]+):[[:space:]]?(.+)\r\
 //[2]: resource
 //[3]: version
 std::regex Http::Request::Impl::requestLineFormat("([[:upper:]]+) (/[^[:space:]]*) HTTP/([[:digit:]]+\\.[[:digit:]]+)\r\n");
+
+//[1]: first parameter
+std::regex Http::Request::Impl::queryStringFormat(".+[^/](\\?[^\\?/[:space:]&=]+)=(?:[^\\?/[:space:]&=]+)(?:&(?:[^\\?/[:space:]&=]+)=(?:[^\\?/[:space:]&=]+))*");
+//std::regex Http::Request::Impl::queryStringFormat("[^/]\?([^\?/'[:space:]&=\"<>]+)=([^'[:space:]&=\"<>]+)((?:&\1=\2)*)");
+//std::regex Http::Request::Impl::queryStringFormat("([^?=&]+)(=([^&]*))?");
+
+//[1]: parameter
+//[2]: value
+std::regex Http::Request::Impl::queryStringParams("([^\\?/[:space:]&=]+)=([^\\?/[:space:]&=]+)");
 
 const char* Http::Request::Impl::getFieldText(HeaderField field)
 {
@@ -226,6 +240,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 {
 	using std::string;
 	using std::array;
+	using std::regex_search;
 
 	#ifdef _WIN32
 	int flags = 0;
@@ -237,7 +252,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	string requestText;
 	array<string::value_type, 256> buffer;
 	string::size_type headerEnd = string::npos;
-	std::smatch requestLineMatch;
+	std::smatch requestLineMatch, queryStringMatch;
 
 	do
 	{
@@ -265,10 +280,22 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		return;
 	}
 
-	if (std::regex_search(requestText, requestLineMatch, requestLineFormat)) {
+	if (regex_search(requestText, requestLineMatch, requestLineFormat))
+	{
 		mMethod = requestLineMatch[1];
 		mResource = requestLineMatch[2];
 		mVersion = requestLineMatch[3];
+
+		if (regex_match(mResource, queryStringMatch, queryStringFormat))
+		{
+
+			for (std::sregex_iterator it(mResource.begin() + queryStringMatch.position(1), mResource.end(), queryStringParams), end; it != end; ++it)
+			{
+				//std::cout << (*it)[1] << std::endl << (*it)[2] << std::endl;
+				queryStringArguments[(*it)[1]] = (*it)[2];
+			}
+			mResource.erase(mResource.begin() + queryStringMatch.position(1), mResource.end());
+		}
 	}
 	else {
 		mStatus = Status::MALFORMED;
@@ -322,7 +349,7 @@ std::string Http::Request::Impl::getMethod()
 	return mMethod;
 }
 
-std::string Http::Request::Impl::getResource()
+std::string Http::Request::Impl::getResourcePath()
 {
 	return mResource;
 }
@@ -374,9 +401,9 @@ std::string Http::Request::getMethod()
 	return mThis->getMethod();
 }
 
-std::string Http::Request::getResource()
+std::string Http::Request::getResourcePath()
 {
-	return mThis->getResource();
+	return mThis->getResourcePath();
 }
 
 std::string Http::Request::getVersion()

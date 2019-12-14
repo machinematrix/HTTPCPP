@@ -18,7 +18,6 @@ namespace Http
 	public:
 		using HandlerCallback = void(Request&);
 		using LoggerCallback = void(const std::string&);
-		
 
 		Server(std::uint16_t mPort);
 		~Server() noexcept;

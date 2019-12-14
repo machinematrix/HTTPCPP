@@ -24,7 +24,7 @@ namespace Http
 		Request& operator=(Request&&) noexcept;
 
 		std::string getMethod();
-		std::string getResource();
+		std::string getResourcePath();
 		std::string getVersion();
 		std::string getField(HeaderField field);
 		const std::vector<std::int8_t>& getBody();

@@ -121,7 +121,7 @@ void image(Http::Request &req)
 		return;
 	}
 
-	auto fileBytes = loadFile(req.getResource().data() + 1);
+	auto fileBytes = loadFile(req.getResourcePath().data() + 1);
 
 	if (!fileBytes.empty())
 	{
