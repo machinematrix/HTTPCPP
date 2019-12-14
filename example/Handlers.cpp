@@ -14,28 +14,6 @@ std::vector<std::wstring> filenames(const std::string&);
 std::vector<std::wstring> getJpgs(const std::string&);
 std::vector<char> loadFile(const std::string&);
 
-void hello(Http::Request &req)
-{
-	using Http::Response;
-	Response resp(req);
-
-	auto fileBytes = loadFile("hello.html");
-
-	if (!fileBytes.empty())
-	{
-		resp.setStatusCode(200);
-		resp.setField(Response::HeaderField::ContentType, "text/html");
-		resp.setField(Response::HeaderField::ContentLength, std::to_string(fileBytes.size()).c_str());
-		resp.setField(Response::HeaderField::CacheControl, "no-store");
-		resp.setField(Response::HeaderField::Connection, "close");
-		resp.setBody({ fileBytes.begin(), fileBytes.end() });
-	}
-	else
-		resp.setStatusCode(404);
-
-	resp.send();
-}
-
 void redirect(Http::Request &req)
 {
 	using Http::Response;
@@ -111,9 +89,4 @@ void image(Http::Request &req)
 
 		resp.send();
 	}
-}
-
-void kill(Http::Request&)
-{
-	std::cin.setstate(std::ios::failbit);
 }
