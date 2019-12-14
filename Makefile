@@ -10,13 +10,13 @@ HttpServer.o : include/HttpServer.h src/HttpServer.cpp
 HttpRequestResponse.o : include/HttpRequest.h include/HttpResponse.h src/HttpRequestResponse.cpp
 	g++ $(INC) $(STD) -c src/HttpRequestResponse.cpp
 
-Common.o : include/Common.h src/Common.cpp
+Common.o : src/Common.h src/Common.cpp
 	g++ $(INC) $(STD) -c src/Common.cpp
 
-ThreadPool.o : include/ThreadPool.h src/ThreadPool.cpp
+ThreadPool.o : src/ThreadPool.h src/ThreadPool.cpp
 	g++ $(INC) $(STD) -c src/ThreadPool.cpp
 
-RequestScheduler.o : include/RequestScheduler.h src/RequestScheduler.cpp
+RequestScheduler.o : src/RequestScheduler.h src/RequestScheduler.cpp
 	g++ $(INC) $(STD) -c src/RequestScheduler.cpp
 
 clean :
