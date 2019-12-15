@@ -125,6 +125,12 @@ void PollRequestScheduler::handleRequest(const std::function<void(DescriptorType
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+void RequestScheduler::addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(socketInfo)::size_type index)
+{
+	callback(mSockets[index].fd);
+	socketInfo[index].isBeingServed.store(false);
+}
+
 RequestScheduler::RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t socketTimeToLive)
 	:pool(threadCount)
 	,mSockets(1, PollFileDescriptor{ serverSocket, POLLIN })
@@ -157,11 +163,11 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 	int result = poll(mSockets.data(), mSockets.size(), 1000);
 	#endif
 
-	if (result != SOCKET_ERROR /*&& result > 0*/)
+	if (result != SOCKET_ERROR)
 	{
 		for (decltype(mSockets)::size_type i = 0; i < mSockets.size();)
 		{
-			if (mSockets[i].revents & POLLNVAL && i) //if I closed the socket after handling the request, stop monitoring it 
+			if (i && mSockets[i].revents & POLLNVAL && !socketInfo[i].isBeingServed.load()) //if I closed the socket after handling the request, stop monitoring it 
 			{
 				#ifndef NDEBUG
 				cout << "Socket " << mSockets[i].fd << " was closed by me" << endl;
@@ -170,7 +176,7 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 				mSockets.erase(mSockets.begin() + i);
 				socketInfo.erase(socketInfo.begin() + i);
 			}
-			else if(i && (mSockets[i].revents & POLLHUP || steady_clock::now() - socketInfo[i].creationTimePoint > socketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
+			else if(i && !socketInfo[i].isBeingServed.load() && (mSockets[i].revents & POLLHUP || steady_clock::now() - socketInfo[i].creationTimePoint > socketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
 			{
 				#ifndef NDEBUG
 				cout << "Socket " << mSockets[i].fd << " expired or got hung up, closing it..." << endl;
@@ -196,13 +202,15 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 				}
 				else
 				{
-					#ifndef NDEBUG
-					cout << "Serving request with socket: " << mSockets[i].fd << endl;
-					#endif
+					if (!socketInfo[i].isBeingServed.load())
+					{
+						#ifndef NDEBUG
+						cout << "Serving request with socket: " << mSockets[i].fd << endl;
+						#endif
 
-					callback(mSockets[i].fd); // TODO: find a way to use thread pool: a socket that is being served might still wake up WSAPoll because the other thread might not be over reading from it yet
-					//pool.addTask(std::bind(callback, mSockets[i].fd));
-					//mSockets.erase(it); //can't do this: socket could still be open after handling request due to keep-alive
+						socketInfo[i].isBeingServed.store(true);
+						pool.addTask(std::bind(&RequestScheduler::addToThreadPool, this, callback, i));
+					}
 				}
 				++i;
 			}

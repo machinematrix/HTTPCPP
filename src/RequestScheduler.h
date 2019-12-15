@@ -75,6 +75,8 @@ class RequestScheduler : public IRequestScheduler
 	std::vector<PollFileDescriptor> mSockets;
 	std::vector<SocketInfo> socketInfo; //in tuple: time_point is the time at which the socket was created. atomic flag indicates whether a worker thread is reading from that socket.
 	std::chrono::milliseconds socketTimeToLive; //in milliseconds. socket will automatically close if there are no incoming connections for at least this amount of time
+
+	void addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(socketInfo)::size_type index);
 public:
 	RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t socketTimeToLive);
 	~RequestScheduler();
