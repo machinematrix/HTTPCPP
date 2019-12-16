@@ -2,9 +2,6 @@ STD=--std=c++17
 INC=-I include
 MACROS=-D NDEBUG
 
-#example : HttpServer.o HttpRequestResponse.o example/example.cpp example/Handlers.cpp
-	#g++ $(INC) $(STD) $(MACROS) -o example.out example/example.cpp example/Handlers.cpp HttpServer.o ThreadPool.o HttpRequestResponse.o Common.o RequestScheduler.o -pthread -lstdc++fs
-
 example : example/example.cpp example/Handlers.cpp Http.a 
 	g++ $(INC) $(STD) $(MACROS) -o example.out $^ -pthread -lstdc++fs
 
