@@ -2,8 +2,14 @@ STD=--std=c++17
 INC=-I include
 MACROS=-D NDEBUG
 
-example : HttpServer.o HttpRequestResponse.o example/example.cpp example/Handlers.cpp
-	g++ $(INC) $(STD) $(MACROS) -o example.out example/example.cpp example/Handlers.cpp HttpServer.o ThreadPool.o HttpRequestResponse.o Common.o RequestScheduler.o -pthread -lstdc++fs
+#example : HttpServer.o HttpRequestResponse.o example/example.cpp example/Handlers.cpp
+	#g++ $(INC) $(STD) $(MACROS) -o example.out example/example.cpp example/Handlers.cpp HttpServer.o ThreadPool.o HttpRequestResponse.o Common.o RequestScheduler.o -pthread -lstdc++fs
+
+example : example/example.cpp example/Handlers.cpp Http.a 
+	g++ $(INC) $(STD) $(MACROS) -o example.out $^ -pthread -lstdc++fs
+
+Http.a : HttpServer.o HttpRequestResponse.o ThreadPool.o Common.o RequestScheduler.o
+	ar rcs $@ $^
 
 HttpServer.o : Common.o RequestScheduler.o HttpRequestResponse.o include/ExportMacros.h include/HttpServer.h src/HttpServer.cpp
 	g++ $(INC) $(STD) $(MACROS) -c src/HttpServer.cpp
@@ -21,4 +27,4 @@ ThreadPool.o : src/ThreadPool.h src/ThreadPool.cpp
 	g++ $(INC) $(STD) $(MACROS) -c src/ThreadPool.cpp
 
 clean :
-	rm *.o example.out
+	rm *.o example.out Http.a
