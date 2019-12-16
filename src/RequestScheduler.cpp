@@ -131,11 +131,11 @@ void RequestScheduler::addToThreadPool(const std::function<void(DescriptorType)>
 	socketInfo[index].isBeingServed.store(false);
 }
 
-RequestScheduler::RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t socketTimeToLive)
+RequestScheduler::RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t mSocketTimeToLive)
 	:pool(threadCount)
 	,mSockets(1, PollFileDescriptor{ serverSocket, POLLIN })
 	,socketInfo(1, std::chrono::steady_clock::now())
-	,socketTimeToLive(socketTimeToLive)
+	,mSocketTimeToLive(mSocketTimeToLive)
 {}
 
 RequestScheduler::~RequestScheduler()
@@ -176,7 +176,7 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 				mSockets.erase(mSockets.begin() + i);
 				socketInfo.erase(socketInfo.begin() + i);
 			}
-			else if(i && !socketInfo[i].isBeingServed.load() && (mSockets[i].revents & POLLHUP || steady_clock::now() - socketInfo[i].creationTimePoint > socketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
+			else if(i && !socketInfo[i].isBeingServed.load() && (mSockets[i].revents & POLLHUP || steady_clock::now() - socketInfo[i].creationTimePoint > mSocketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
 			{
 				#ifndef NDEBUG
 				cout << "Socket " << mSockets[i].fd << " expired or got hung up, closing it..." << endl;

@@ -2,7 +2,6 @@
 #define __NAMES__
 
 #ifdef __linux__
-#define _GNU_SOURCE
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netdb.h>
