@@ -69,6 +69,9 @@ public:
 	std::string getResourcePath();
 	std::string getVersion();
 	std::string getField(HeaderField field);
+	std::string getRequestStringValue(const std::string&);
+	std::vector<std::string> getRequestStringKeys();
+
 	const decltype(mBody)& getBody();
 	Status getStatus();
 	DescriptorType getSocket();
@@ -291,7 +294,6 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 
 			for (std::sregex_iterator it(mResource.begin() + queryStringMatch.position(1), mResource.end(), queryStringParams), end; it != end; ++it)
 			{
-				//std::cout << (*it)[1] << std::endl << (*it)[2] << std::endl;
 				queryStringArguments[(*it)[1]] = (*it)[2];
 			}
 			mResource.erase(mResource.begin() + queryStringMatch.position(1), mResource.end());
@@ -364,6 +366,28 @@ std::string Http::Request::Impl::getField(HeaderField field)
 	return mFields[static_cast<size_t>(field)];
 }
 
+std::string Http::Request::Impl::getRequestStringValue(const std::string &key)
+{
+	try {
+		return queryStringArguments.at(key);
+	}
+	catch (const std::out_of_range&) {
+		throw RequestException("Key does not exist");
+	}
+}
+
+std::vector<std::string> Http::Request::Impl::getRequestStringKeys()
+{
+	std::vector<std::string> result;
+	result.reserve(queryStringArguments.size());
+
+	for (const decltype(queryStringArguments)::value_type &pair : queryStringArguments) {
+		result.push_back(pair.first);
+	}
+
+	return result;
+}
+
 const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
 {
 	return mBody;
@@ -414,6 +438,16 @@ std::string Http::Request::getVersion()
 std::string Http::Request::getField(HeaderField field)
 {
 	return mThis->getField(field);
+}
+
+std::string Http::Request::getRequestStringValue(const std::string &key)
+{
+	return mThis->getRequestStringValue(key);
+}
+
+std::vector<std::string> Http::Request::getRequestStringKeys()
+{
+	return mThis->getRequestStringKeys();
 }
 
 const std::vector<std::uint8_t>& Http::Request::getBody()

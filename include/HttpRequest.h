@@ -27,9 +27,13 @@ namespace Http
 		std::string getResourcePath();
 		std::string getVersion();
 		std::string getField(HeaderField field);
+		std::string getRequestStringValue(const std::string &key);
+		std::vector<std::string> getRequestStringKeys();
 		const std::vector<std::uint8_t>& getBody();
 		Status getStatus();
 	};
+
+	using RequestException = std::runtime_error;
 
 	enum class Request::HeaderField : std::size_t //https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Standard_request_fields
 	{
