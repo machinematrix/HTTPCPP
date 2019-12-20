@@ -117,10 +117,11 @@ int main()
 		std::string input;
 		Http::Server sv(80); //you'll need root privileges to start a server on ports under 1024
 
-		for (const auto &fileName : getJpgs(".")) {
+		/*for (const auto &fileName : getJpgs(".")) {
 			sv.setResourceCallback(("/" + std::to_string(fileName)).c_str(), image);
-		}
+		}*/
 
+		sv.setResourceCallback("/image", image);
 		sv.setResourceCallback("/list", list);
 		sv.setResourceCallback("/", redirect);
 		sv.setResourceCallback("/favicon.ico", favicon);

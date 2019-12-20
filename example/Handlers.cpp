@@ -91,7 +91,7 @@ void list(Request &req)
 	std::string mBody;
 	for (const auto &name : getJpgs(".")) {
 		std::string asciiName(std::to_string(name));
-		mBody += "<a href=\"/" + asciiName + "\">" + asciiName + "</a><br />";
+		mBody += "<a href=\"/image?imageName=" + asciiName + "\">" + asciiName + "</a><br />";
 	}
 
 	if (mBody.empty())
@@ -112,14 +112,14 @@ void list(Request &req)
 	resp.send();
 }
 
-void image(Request &req)
+void image(Request &req) //?imageName=<image file name>
 {
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
 		return;
 	}
 
-	auto fileBytes = loadFile(req.getResourcePath().data() + 1);
+	auto fileBytes = loadFile(req.getRequestStringValue("imageName"));
 
 	if (!fileBytes.empty())
 	{
