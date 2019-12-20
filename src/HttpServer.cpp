@@ -111,7 +111,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 				mEndpointLogger(logMessage);
 			}
 			catch (const ResponseException &e) {
-				std::string msg("Exception throw at endpoint ");
+				std::string msg("Exception thrown at endpoint ");
 				msg.append(bestMatch->first);
 				msg.append(": ");
 				msg.append(e.what());
