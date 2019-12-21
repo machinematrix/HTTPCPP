@@ -11,61 +11,28 @@ void list(Http::Request&);
 void image(Http::Request&);
 void kill(Http::Request&);
 
-namespace std
-{
-	wstring to_wstring(const string &str)
-	{
-		wstring result;
-
-		result.reserve(str.size());
-
-		for (string::size_type i = 0, sz = str.size(); i < sz; ++i) {
-			result.push_back(str[i]);
-		}
-
-		return result;
-	}
-
-	string to_string(const wstring &str)
-	{
-		string result;
-
-		result.reserve(str.size());
-
-		for (wstring::size_type i = 0, sz = str.size(); i < sz; ++i)
-		{
-			if (str[i] > numeric_limits<string::value_type>::max()) {
-				throw std::invalid_argument("Argument contains a character that cannot be represented by string::value_type");
-			}
-			result.push_back(static_cast<string::value_type>(str[i]));
-		}
-
-		return result;
-	}
-}
-
-std::vector<std::wstring> filenames(const std::string &directory)
+std::vector<std::string> filenames(const std::string &directory)
 {
 	using FilesystemNamespace::directory_iterator;
 
-	std::vector<std::wstring> result;
+	std::vector<std::string> result;
 	directory_iterator iterator(directory), end;
 
 	while (iterator != end) {
-		result.push_back(iterator->path().filename().wstring());
+		result.push_back(iterator->path().filename().string());
 		++iterator;
 	}
 
 	return result;
 }
 
-std::vector<std::wstring> getJpgs(const std::string &directory)
+std::vector<std::string> getJpgs(const std::string &directory)
 {
-	std::vector<std::wstring> result(filenames(directory));
+	std::vector<std::string> result(filenames(directory));
 
 	for (auto i = result.begin(); i != result.end();)
 	{
-		auto extension = i->find(L".jpg");
+		auto extension = i->find(".jpg");
 		if (extension != std::wstring::npos && extension == i->size() - 4)
 			++i;
 		else
@@ -131,6 +98,14 @@ int main()
 		do
 		{
 			cin >> input;
+			if (input == "clear")
+			{
+				#ifdef _WIN32
+				system("cls");
+				#elif defined
+				system("clear");
+				#endif
+			}
 		} while (input != "exit" && cin);
 	}
 	catch (const Http::ServerException &e) {
