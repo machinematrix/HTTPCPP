@@ -124,12 +124,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 				mEndpointLogger(msg);
 			}
 		}
-
-		if (request.getField(Request::HeaderField::Connection) == "keep-alive")
-			return; //return without closing socket
 	}
-
-	CloseSocket(clientSocket);
 }
 
 Http::Server::Impl::Impl(std::uint16_t mPort)
