@@ -59,11 +59,13 @@ class Http::Request::Impl
 	std::map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
 	Status mStatus;
+	bool mKeepAlive;
 
 	static const char* getFieldText(HeaderField field);
 	HeaderField getFieldId(const std::string &field);
 public:
 	Impl(const SocketWrapper &mSock);
+	~Impl();
 
 	std::string getMethod();
 	std::string getResourcePath();
@@ -71,6 +73,8 @@ public:
 	std::string getField(HeaderField field);
 	std::string getRequestStringValue(const std::string&);
 	std::vector<std::string> getRequestStringKeys();
+
+	void toggleKeepAlive(bool);
 
 	const decltype(mBody)& getBody();
 	Status getStatus();
@@ -88,8 +92,6 @@ std::regex Http::Request::Impl::requestLineFormat("([[:upper:]]+) (/[^[:space:]]
 
 //[1]: first parameter
 std::regex Http::Request::Impl::queryStringFormat(".+[^/](\\?[^\\?/[:space:]&=]+)=(?:[^\\?/[:space:]&=]+)(?:&(?:[^\\?/[:space:]&=]+)=(?:[^\\?/[:space:]&=]+))*");
-//std::regex Http::Request::Impl::queryStringFormat("[^/]\?([^\?/'[:space:]&=\"<>]+)=([^'[:space:]&=\"<>]+)((?:&\1=\2)*)");
-//std::regex Http::Request::Impl::queryStringFormat("([^?=&]+)(=([^&]*))?");
 
 //[1]: parameter
 //[2]: value
@@ -240,6 +242,7 @@ Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string &fi
 Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	:mSock(sockWrapper.mSock)
 	,mStatus(Status::EMPTY)
+	,mKeepAlive(true) //https://tools.ietf.org/html/rfc2616#section-8.1.2
 {
 	using std::string;
 	using std::array;
@@ -251,7 +254,9 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
-	unsigned contentLength, chances = 30;
+
+	constexpr unsigned initialChances = 200, sleepTime = 5;
+	unsigned contentLength, chances = initialChances;
 	string requestText;
 	array<string::value_type, 256> buffer;
 	string::size_type headerEnd = string::npos;
@@ -265,11 +270,11 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		{
 			requestText.append(buffer.data(), bytesRead);
 			headerEnd = requestText.rfind("\r\n\r\n");
-			chances = 30;
+			chances = initialChances;
 		}
 		else
 		{
-			Sleep(25);
+			Sleep(sleepTime);
 			--chances;
 		}
 	}
@@ -324,7 +329,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	if (contentLength)
 	{
 		mBody.insert(mBody.begin(), requestText.begin() + headerEnd + 4, requestText.end());
-		chances = 30;
+		chances = initialChances;
 
 		while (mBody.size() < contentLength && chances)
 		{
@@ -333,17 +338,23 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 			if (bytesRead != SOCKET_ERROR && bytesRead > 0)
 			{
 				mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
-				chances = 30;
+				chances = initialChances;
 			}
 			else
 			{
-				Sleep(25);
+				Sleep(sleepTime);
 				--chances;
 			}
 		}
 	}
 
 	mStatus = Status::OK;
+}
+
+Http::Request::Impl::~Impl()
+{
+	if (!mKeepAlive)
+		CloseSocket(mSock);
 }
 
 std::string Http::Request::Impl::getMethod()
@@ -386,6 +397,11 @@ std::vector<std::string> Http::Request::Impl::getRequestStringKeys()
 	}
 
 	return result;
+}
+
+void Http::Request::Impl::toggleKeepAlive(bool toggle)
+{
+	mKeepAlive = toggle;
 }
 
 const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
@@ -458,6 +474,11 @@ const std::vector<std::uint8_t>& Http::Request::getBody()
 Http::Request::Status Http::Request::getStatus()
 {
 	return mThis->getStatus();
+}
+
+void Http::Request::toggleKeepAlive(bool toggle)
+{
+	mThis->toggleKeepAlive(toggle);
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
