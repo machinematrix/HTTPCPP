@@ -102,26 +102,28 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 
 		if (bestMatch != mHandlers.cend())
 		{
+			std::string logMessage("Served request at endpoint \"");
 			try {
 				bestMatch->second(request);
 
-				std::string logMessage("Served request at endpoint \"");
 				logMessage += bestMatch->first;
 				logMessage.push_back('\"');
 				mEndpointLogger(logMessage);
 			}
-			catch (const ResponseException &e) {
-				std::string msg("Exception thrown at endpoint ");
-				msg.append(bestMatch->first);
-				msg.append(": ");
-				msg.append(e.what());
-				mEndpointLogger(msg);
-			}
-			catch (const std::exception&) {
-				std::string msg("Unexpected exception thrown at endpoint \"");
-				msg.append(bestMatch->first);
-				msg.append("\" handler");
-				mEndpointLogger(msg);
+			catch (const std::exception &e) {
+				Response serverErrorResponse(request);
+				
+				logMessage = "Exception thrown at endpoint ";
+				logMessage.append(bestMatch->first);
+				logMessage.append(": ");
+				logMessage.append(e.what());
+				mEndpointLogger(logMessage);
+
+				request.toggleKeepAlive(false);
+				serverErrorResponse.setStatusCode(500);
+				serverErrorResponse.setField(Response::HeaderField::CacheControl, "no-store");
+				serverErrorResponse.setField(Response::HeaderField::Connection, "close");
+				serverErrorResponse.send();
 			}
 		}
 	}
