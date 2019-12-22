@@ -12,10 +12,9 @@ using Http::Request;
 
 namespace
 {
-	void sendNotAllowed(Http::Request &req, const std::string &allowedMethods)
+	void sendNotAllowed(Request &req, Response &resp, const std::string &allowedMethods)
 	{
 		using Http::Response;
-		Response resp(req);
 
 		resp.setStatusCode(405);
 		resp.setField(Response::HeaderField::Connection, "close");
@@ -24,14 +23,14 @@ namespace
 		resp.send();
 	}
 
-	void setKeepAlive(Http::Request &request, Http::Response &response)
+	void setKeepAlive(Request &request, Response &response)
 	{
-		if (request.getField(Http::Request::HeaderField::Connection) == "keep-alive")
+		auto connectionHeader = request.getField(Http::Request::HeaderField::Connection);
+
+		if (connectionHeader.empty() || connectionHeader == "keep-alive")
 			response.setField(Response::HeaderField::Connection, "keep-alive");
-		else {
+		else
 			response.setField(Response::HeaderField::Connection, "close");
-			request.toggleKeepAlive(false);
-		}
 	}
 }
 
@@ -50,7 +49,7 @@ void redirect(Request &req, Response &resp)
 void favicon(Request &req, Response &resp)
 {
 	if (req.getMethod() != "GET") {
-		sendNotAllowed(req, "GET");
+		sendNotAllowed(req, resp, "GET");
 		return;
 	}
 
@@ -74,12 +73,11 @@ void favicon(Request &req, Response &resp)
 void list(Request &req, Response &resp)
 {
 	if (req.getMethod() != "GET") {
-		sendNotAllowed(req, "GET");
+		sendNotAllowed(req, resp, "GET");
 		return;
 	}
 
 	auto pictures = getJpgs(".");
-	Response resp(req);
 
 	std::string mBody;
 	for (const auto &name : getJpgs(".")) {
@@ -104,7 +102,7 @@ void list(Request &req, Response &resp)
 void image(Request &req, Response &resp) //?name=<image file name>
 {
 	if (req.getMethod() != "GET") {
-		sendNotAllowed(req, "GET");
+		sendNotAllowed(req, resp, "GET");
 		return;
 	}
 

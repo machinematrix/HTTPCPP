@@ -55,9 +55,6 @@ void Http::Server::Impl::serverProcedure()
 
 	mStatusChanged.notify_all();
 
-	//std::unique_ptr<IRequestScheduler> scheduler(new ThreadPoolRequestScheduler(4, mSock));
-	//std::unique_ptr<IRequestScheduler> scheduler(new SelectRequestScheduler(mSock));
-	//std::unique_ptr<IRequestScheduler> scheduler(new PollRequestScheduler(mSock));
 	std::unique_ptr<IRequestScheduler> scheduler(new RequestScheduler(mSock, 8, 5000));
 
 	while (mStatus.load() == ServerStatus::RUNNING)
@@ -104,14 +101,18 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 		{
 			std::string logMessage("Served request at endpoint \"");
 			try {
-				bestMatch->second(request);
+				Response response(SocketWrapper{ clientSocket });
+				bestMatch->second(request, response);
+				
+				if (request.getField(Request::HeaderField::Connection) == "close")
+					CloseSocket(clientSocket);
 
 				logMessage += bestMatch->first;
 				logMessage.push_back('\"');
 				mEndpointLogger(logMessage);
 			}
 			catch (const std::exception &e) {
-				Response serverErrorResponse(request);
+				Response serverErrorResponse(SocketWrapper{ clientSocket });
 				
 				logMessage = "Exception thrown at endpoint ";
 				logMessage.append(bestMatch->first);
@@ -119,11 +120,11 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 				logMessage.append(e.what());
 				mEndpointLogger(logMessage);
 
-				request.toggleKeepAlive(false);
 				serverErrorResponse.setStatusCode(500);
 				serverErrorResponse.setField(Response::HeaderField::CacheControl, "no-store");
 				serverErrorResponse.setField(Response::HeaderField::Connection, "close");
 				serverErrorResponse.send();
+				CloseSocket(clientSocket);
 			}
 		}
 	}

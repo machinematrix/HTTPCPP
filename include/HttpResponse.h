@@ -7,14 +7,15 @@
 
 namespace Http
 {
-	class EXPORT Request;
+	struct SocketWrapper;
+
 	class EXPORT Response
 	{
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:
 		enum class HeaderField;
-		Response(const Request&);
+		Response(const SocketWrapper&);
 		~Response() noexcept;
 		Response(Response&&) noexcept;
 		Response& operator=(Response&&) noexcept;

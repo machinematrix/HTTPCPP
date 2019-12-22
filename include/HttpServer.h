@@ -10,6 +10,7 @@
 namespace Http
 {
 	class Request;
+	class Response;
 
 	class EXPORT Server
 	{

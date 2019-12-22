@@ -59,13 +59,11 @@ class Http::Request::Impl
 	std::map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
 	Status mStatus;
-	bool mKeepAlive;
 
 	static const char* getFieldText(HeaderField field);
 	HeaderField getFieldId(const std::string &field);
 public:
 	Impl(const SocketWrapper &mSock);
-	~Impl();
 
 	std::string getMethod();
 	std::string getResourcePath();
@@ -74,11 +72,8 @@ public:
 	std::string getRequestStringValue(const std::string&);
 	std::vector<std::string> getRequestStringKeys();
 
-	void toggleKeepAlive(bool);
-
 	const decltype(mBody)& getBody();
 	Status getStatus();
-	DescriptorType getSocket();
 };
 
 //[1]: header field
@@ -242,7 +237,6 @@ Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string &fi
 Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	:mSock(sockWrapper.mSock)
 	,mStatus(Status::EMPTY)
-	,mKeepAlive(true) //https://tools.ietf.org/html/rfc2616#section-8.1.2
 {
 	using std::string;
 	using std::array;
@@ -351,12 +345,6 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	mStatus = Status::OK;
 }
 
-Http::Request::Impl::~Impl()
-{
-	if (!mKeepAlive)
-		CloseSocket(mSock);
-}
-
 std::string Http::Request::Impl::getMethod()
 {
 	return mMethod;
@@ -399,11 +387,6 @@ std::vector<std::string> Http::Request::Impl::getRequestStringKeys()
 	return result;
 }
 
-void Http::Request::Impl::toggleKeepAlive(bool toggle)
-{
-	mKeepAlive = toggle;
-}
-
 const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
 {
 	return mBody;
@@ -412,11 +395,6 @@ const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
 Http::Request::Status Http::Request::Impl::getStatus()
 {
 	return mStatus;
-}
-
-DescriptorType Http::Request::Impl::getSocket()
-{
-	return mSock;
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -476,11 +454,6 @@ Http::Request::Status Http::Request::getStatus()
 	return mThis->getStatus();
 }
 
-void Http::Request::toggleKeepAlive(bool toggle)
-{
-	mThis->toggleKeepAlive(toggle);
-}
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -500,7 +473,7 @@ class Http::Response::Impl
 
 	static const char* getFieldText(HeaderField field);
 public:
-	Impl(const Request&);
+	Impl(DescriptorType);
 
 	void setBody(const decltype(mBody)&);
 	void setBody(const std::string&);
@@ -610,8 +583,8 @@ const char* Http::Response::Impl::getFieldText(HeaderField field)
 	}
 }
 
-Http::Response::Impl::Impl(const Request &request)
-	:mSock(request.mThis->getSocket()),
+Http::Response::Impl::Impl(DescriptorType sock)
+	:mSock(sock),
 	mStatusCode(0),
 	mVersion("1.1")
 {}
@@ -679,8 +652,8 @@ void Http::Response::Impl::send()
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Response::Response(const Request &request)
-	:mThis(new Impl(request))
+Http::Response::Response(const SocketWrapper &wrapper)
+	:mThis(new Impl(wrapper.mSock))
 {}
 
 Http::Response::~Response() noexcept = default;

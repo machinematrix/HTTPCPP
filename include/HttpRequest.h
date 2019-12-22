@@ -31,7 +31,6 @@ namespace Http
 		std::vector<std::string> getRequestStringKeys();
 		const std::vector<std::uint8_t>& getBody();
 		Status getStatus();
-		void toggleKeepAlive(bool toggle);
 	};
 
 	using RequestException = std::runtime_error;

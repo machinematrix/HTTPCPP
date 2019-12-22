@@ -5,11 +5,11 @@
 
 namespace FilesystemNamespace = std::filesystem;
 
-void redirect(Http::Request&);
-void favicon(Http::Request&);
-void list(Http::Request&);
-void image(Http::Request&);
-void kill(Http::Request&);
+void redirect(Http::Request&, Http::Response&);
+void favicon(Http::Request&, Http::Response&);
+void list(Http::Request&, Http::Response&);
+void image(Http::Request&, Http::Response&);
+void kill(Http::Request&, Http::Response&);
 
 std::vector<std::string> filenames(const std::string &directory)
 {
