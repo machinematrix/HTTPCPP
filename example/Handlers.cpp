@@ -35,10 +35,8 @@ namespace
 	}
 }
 
-void redirect(Http::Request &req)
+void redirect(Request &req, Response &resp)
 {
-	Response resp(req);
-
 	resp.setStatusCode(303);
 	resp.setField(Response::HeaderField::ContentType, "text/html");
 	resp.setField(Response::HeaderField::CacheControl, "no-store");
@@ -49,14 +47,12 @@ void redirect(Http::Request &req)
 	resp.send();
 }
 
-void favicon(Request &req)
+void favicon(Request &req, Response &resp)
 {
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
 		return;
 	}
-
-	Response resp(req);
 
 	auto fileBytes = loadFile("favicon.ico");
 
@@ -75,7 +71,7 @@ void favicon(Request &req)
 	resp.send();
 }
 
-void list(Request &req)
+void list(Request &req, Response &resp)
 {
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
@@ -105,14 +101,13 @@ void list(Request &req)
 	resp.send();
 }
 
-void image(Request &req) //?name=<image file name>
+void image(Request &req, Response &resp) //?name=<image file name>
 {
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, "GET");
 		return;
 	}
 
-	Response resp(req);
 	auto name = req.getRequestStringValue("name");
 
 	if (name.find_first_of("\\/") == std::string::npos)

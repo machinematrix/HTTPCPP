@@ -16,7 +16,7 @@ namespace Http
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:
-		using HandlerCallback = void(Request&);
+		using HandlerCallback = void(Request&, Response&);
 		using LoggerCallback = void(const std::string&);
 
 		Server(std::uint16_t mPort);
