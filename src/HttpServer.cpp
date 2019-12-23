@@ -27,7 +27,8 @@ class Http::Server::Impl
 	std::thread mServerThread;
 	std::condition_variable mStatusChanged;
 	
-	std::function<LoggerCallback> mEndpointLogger; //pointer (4|8 bytes)
+	std::function<LoggerCallback> mEndpointLogger = placeholderLogger; //pointer (4|8 bytes)
+	std::function<LoggerCallback> mErrorLogger = placeholderLogger; //pointer (4|8 bytes)
 	DescriptorType mSock;
 	const int mQueueLength = 5;
 	std::uint16_t mPort;
@@ -40,7 +41,8 @@ public:
 	~Impl();
 
 	void start();
-	void setLogger(const std::function<LoggerCallback> &callback) noexcept;
+	void setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept;
+	void setErrorLogger(const std::function<LoggerCallback> &callback) noexcept;
 	void setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback);
 };
 
@@ -73,10 +75,9 @@ Http::Server::Impl::~Impl()
 
 void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 {
-	Request request(SocketWrapper{ clientSocket });
-	
-	if (request.getStatus() == Request::Status::OK)
+	try
 	{
+		Request request(SocketWrapper{ clientSocket });
 		decltype(mHandlers)::const_iterator bestMatch = mHandlers.cend();
 
 		for (decltype(mHandlers)::const_iterator handlerSlot = mHandlers.cbegin(); handlerSlot != mHandlers.cend(); ++handlerSlot)
@@ -91,7 +92,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 					&& !handlerSlot->first.compare(0, lastSlash + 1, requestResource, 0, lastSlash + 1)
 					)
 				{ //if it matches at the beginning, and to the last slash
-					if(bestMatch == mHandlers.cend() || handlerSlot->first.size() > bestMatch->first.size())
+					if (bestMatch == mHandlers.cend() || handlerSlot->first.size() > bestMatch->first.size())
 						bestMatch = handlerSlot;
 				}
 			}
@@ -103,17 +104,20 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 			try {
 				Response response(SocketWrapper{ clientSocket });
 				bestMatch->second(request, response);
-				
-				if (request.getField(Request::HeaderField::Connection) == "close")
+
+				auto requestConnectionHeader = request.getField(Request::HeaderField::Connection);
+				auto responseConnectionHeader = response.getField(Response::HeaderField::Connection);
+
+				if (!(requestConnectionHeader.empty() || requestConnectionHeader == "keep-alive" && responseConnectionHeader == requestConnectionHeader))
 					CloseSocket(clientSocket);
 
 				logMessage += bestMatch->first;
 				logMessage.push_back('\"');
 				mEndpointLogger(logMessage);
 			}
-			catch (const std::exception &e) {
+			catch (const std::exception & e) {
 				Response serverErrorResponse(SocketWrapper{ clientSocket });
-				
+
 				logMessage = "Exception thrown at endpoint ";
 				logMessage.append(bestMatch->first);
 				logMessage.append(": ");
@@ -128,13 +132,17 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 			}
 		}
 	}
+	catch (const RequestException &e) {
+		mEndpointLogger(e.what());
+		CloseSocket(clientSocket);
+	}
 }
 
 Http::Server::Impl::Impl(std::uint16_t mPort)
-	try :mSock(socket(AF_INET, SOCK_STREAM, 0)),
-	mPort(mPort),
-	mStatus(ServerStatus::UNINITIALIZED),
-	mEndpointLogger(placeholderLogger)
+	:mSock(socket(AF_INET, SOCK_STREAM, 0))
+	,mPort(mPort)
+	,mStatus(ServerStatus::UNINITIALIZED)
+	,mEndpointLogger(placeholderLogger)
 {
 	char optval[8] = {};
 	const char *error = "Could not create server";
@@ -163,9 +171,6 @@ Http::Server::Impl::Impl(std::uint16_t mPort)
 	if (bind(mSock, addressListPtr->ai_addr, len) == SOCKET_ERROR)
 		throw ServerException(error);
 }
-catch (const std::runtime_error e) {
-	throw ServerException(e.what());
-}
 
 void Http::Server::Impl::start()
 {
@@ -179,9 +184,14 @@ void Http::Server::Impl::start()
 	}
 }
 
-void Http::Server::Impl::setLogger(const std::function<LoggerCallback> &callback) noexcept
+void Http::Server::Impl::setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept
 {
 	mEndpointLogger = (callback ? callback : placeholderLogger);
+}
+
+void Http::Server::Impl::setErrorLogger(const std::function<LoggerCallback>& callback) noexcept
+{
+	mErrorLogger = (callback ? callback : placeholderLogger);
 }
 
 void Http::Server::Impl::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
@@ -211,9 +221,14 @@ void Http::Server::start()
 	mThis->start();
 }
 
-void Http::Server::setLogger(const std::function<LoggerCallback> &callback) noexcept
+void Http::Server::setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept
 {
-	mThis->setLogger(callback);
+	mThis->setEndpointLogger(callback);
+}
+
+void Http::Server::setErrorLogger(const std::function<LoggerCallback>& callback) noexcept
+{
+	mThis->setErrorLogger(callback);
 }
 
 void Http::Server::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)

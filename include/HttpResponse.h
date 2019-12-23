@@ -24,6 +24,7 @@ namespace Http
 		void setBody(const std::string &body);
 		void setStatusCode(std::uint16_t code);
 		void setField(HeaderField field, const std::string &value);
+		std::string getField(HeaderField field);
 		void send();
 	};
 

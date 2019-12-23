@@ -74,6 +74,11 @@ void logger(const std::string &msg)
 	std::cout << msg << std::endl;
 }
 
+void errorLogger(const std::string &msg)
+{
+	std::cerr << "Error: " << msg << std::endl;
+}
+
 int main()
 {
 	using std::cout;
@@ -84,15 +89,12 @@ int main()
 		std::string input;
 		Http::Server sv(80); //you'll need root privileges to start a server on ports under 1024
 
-		/*for (const auto &fileName : getJpgs(".")) {
-			sv.setResourceCallback(("/" + std::to_string(fileName)).c_str(), image);
-		}*/
-
 		sv.setResourceCallback("/image", image);
 		sv.setResourceCallback("/list", list);
 		sv.setResourceCallback("/", redirect);
 		sv.setResourceCallback("/favicon.ico", favicon);
-		sv.setLogger(logger);
+		sv.setEndpointLogger(logger);
+		sv.setErrorLogger(logger);
 		sv.start();
 
 		do
@@ -102,7 +104,7 @@ int main()
 			{
 				#ifdef _WIN32
 				system("cls");
-				#elif defined
+				#elif defined __linux__
 				system("clear");
 				#endif
 			}

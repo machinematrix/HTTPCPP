@@ -14,8 +14,6 @@ namespace
 {
 	void sendNotAllowed(Request &req, Response &resp, const std::string &allowedMethods)
 	{
-		using Http::Response;
-
 		resp.setStatusCode(405);
 		resp.setField(Response::HeaderField::Connection, "close");
 		resp.setField(Response::HeaderField::CacheControl, "no-store");

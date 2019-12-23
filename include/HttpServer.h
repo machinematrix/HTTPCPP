@@ -27,7 +27,8 @@ namespace Http
 
 		void start();
 		//pass nullptr to remove current logger
-		void setLogger(const std::function<LoggerCallback> &callback) noexcept;
+		void setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept;
+		void setErrorLogger(const std::function<LoggerCallback> &callback) noexcept;
 		void setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback);
 	};
 

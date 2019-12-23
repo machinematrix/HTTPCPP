@@ -58,7 +58,6 @@ class Http::Request::Impl
 	std::vector<std::uint8_t> mBody;
 	std::map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
-	Status mStatus;
 
 	static const char* getFieldText(HeaderField field);
 	HeaderField getFieldId(const std::string &field);
@@ -73,7 +72,6 @@ public:
 	std::vector<std::string> getRequestStringKeys();
 
 	const decltype(mBody)& getBody();
-	Status getStatus();
 };
 
 //[1]: header field
@@ -236,7 +234,6 @@ Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string &fi
 
 Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	:mSock(sockWrapper.mSock)
-	,mStatus(Status::EMPTY)
 {
 	using std::string;
 	using std::array;
@@ -278,8 +275,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		return;
 
 	if (headerEnd == string::npos) {
-		mStatus = Status::MALFORMED;
-		return;
+		throw RequestException("Header doesn't end");
 	}
 
 	if (regex_search(requestText, requestLineMatch, requestLineFormat))
@@ -299,8 +295,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		}
 	}
 	else {
-		mStatus = Status::MALFORMED;
-		return;
+		throw RequestException("Request line is malformed");
 	}
 
 	for (std::sregex_iterator i(requestText.begin(), requestText.end(), requestHeaderFormat), end; i != end; ++i)
@@ -341,8 +336,6 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 			}
 		}
 	}
-
-	mStatus = Status::OK;
 }
 
 std::string Http::Request::Impl::getMethod()
@@ -391,12 +384,6 @@ const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
 {
 	return mBody;
 }
-
-Http::Request::Status Http::Request::Impl::getStatus()
-{
-	return mStatus;
-}
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -449,11 +436,6 @@ const std::vector<std::uint8_t>& Http::Request::getBody()
 	return mThis->getBody();
 }
 
-Http::Request::Status Http::Request::getStatus()
-{
-	return mThis->getStatus();
-}
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -479,6 +461,7 @@ public:
 	void setBody(const std::string&);
 	void setStatusCode(std::uint16_t);
 	void setField(HeaderField field, const std::string &value);
+	std::string getField(HeaderField);
 	void send();
 };
 
@@ -609,6 +592,16 @@ void Http::Response::Impl::setField(HeaderField field, const std::string &value)
 	mFields[field] = value;
 }
 
+std::string Http::Response::Impl::getField(Http::Response::HeaderField field)
+{
+	try {
+		return mFields.at(field);
+	}
+	catch (const std::out_of_range&) {
+		return "";
+	}
+}
+
 void Http::Response::Impl::send()
 {
 	if (!mStatusCode)
@@ -680,6 +673,11 @@ void Http::Response::setStatusCode(std::uint16_t code)
 void Http::Response::setField(HeaderField field, const std::string &value)
 {
 	mThis->setField(field, value);
+}
+
+std::string Http::Response::getField(HeaderField field)
+{
+	return mThis->getField(field);
 }
 
 void Http::Response::send()

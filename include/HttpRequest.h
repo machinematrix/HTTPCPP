@@ -11,12 +11,10 @@ namespace Http
 	struct SocketWrapper;
 	class EXPORT Request
 	{
-		friend class EXPORT Response;
 		class Impl;
 		std::unique_ptr<Impl> mThis;
 	public:
 		enum class HeaderField : std::size_t;
-		enum class Status { OK, MALFORMED, EMPTY };
 
 		Request(const SocketWrapper&);
 		~Request() noexcept;
@@ -30,7 +28,6 @@ namespace Http
 		std::string getRequestStringValue(const std::string &key);
 		std::vector<std::string> getRequestStringKeys();
 		const std::vector<std::uint8_t>& getBody();
-		Status getStatus();
 	};
 
 	using RequestException = std::runtime_error;
