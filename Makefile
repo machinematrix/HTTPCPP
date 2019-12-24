@@ -2,26 +2,29 @@ STD=--std=c++17
 INC=-I include
 MACROS=-D NDEBUG
 
-example : example/example.cpp example/Handlers.cpp Http.a 
-	g++ $(INC) $(STD) $(MACROS) -o example.out $^ -pthread -lstdc++fs
+example.out : example/example.cpp example/Handlers.cpp Http.a 
+	g++ $(INC) $(STD) $(MACROS) -o $@ $^ -pthread -lstdc++fs
 
-Http.a : HttpServer.o HttpRequestResponse.o ThreadPool.o Common.o RequestScheduler.o
+Http.a : HttpServer.o HttpRequest.o HttpResponse.o ThreadPool.o Common.o RequestScheduler.o
 	ar rcs $@ $^
 
-HttpServer.o : Common.o RequestScheduler.o HttpRequestResponse.o include/ExportMacros.h include/HttpServer.h src/HttpServer.cpp
-	g++ $(INC) $(STD) $(MACROS) -c src/HttpServer.cpp
+HttpServer.o : src/HttpServer.cpp Common.o RequestScheduler.o HttpRequest.o HttpResponse.o include/ExportMacros.h include/HttpServer.h
+	g++ $(INC) $(STD) $(MACROS) -c $<
 
-HttpRequestResponse.o : Common.o include/HttpRequest.h include/HttpResponse.h include/ExportMacros.h src/HttpRequestResponse.cpp
-	g++ $(INC) $(STD) $(MACROS) -c src/HttpRequestResponse.cpp
+HttpRequest.o : src/HttpRequest.cpp Common.o include/HttpRequest.h include/ExportMacros.h
+	g++ $(INC) $(STD) $(MACROS) -c $<
 
-RequestScheduler.o : Common.o ThreadPool.o src/RequestScheduler.h src/RequestScheduler.cpp
-	g++ $(INC) $(STD) $(MACROS) -c src/RequestScheduler.cpp
+HttpResponse.o : src/HttpResponse.cpp Common.o include/HttpResponse.h include/ExportMacros.h
+	g++ $(INC) $(STD) $(MACROS) -c $<
 
-Common.o : src/Common.h src/Common.cpp
-	g++ $(INC) $(STD) $(MACROS) -c src/Common.cpp
+RequestScheduler.o : src/RequestScheduler.cpp Common.o ThreadPool.o src/RequestScheduler.h
+	g++ $(INC) $(STD) $(MACROS) -c $<
 
-ThreadPool.o : src/ThreadPool.h src/ThreadPool.cpp
-	g++ $(INC) $(STD) $(MACROS) -c src/ThreadPool.cpp
+Common.o : src/Common.cpp src/Common.h
+	g++ $(INC) $(STD) $(MACROS) -c $<
+
+ThreadPool.o : src/ThreadPool.cpp src/ThreadPool.h
+	g++ $(INC) $(STD) $(MACROS) -c $<
 
 clean :
 	rm *.o example.out Http.a
