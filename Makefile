@@ -1,30 +1,53 @@
 STD=--std=c++17
 INC=-I include
 MACROS=-D NDEBUG
+OBJDIR = obj
+BINDIR = bin
+OBJFILES = $(OBJDIR)/HttpServer.o $(OBJDIR)/HttpRequest.o $(OBJDIR)/HttpResponse.o $(OBJDIR)/ThreadPool.o $(OBJDIR)/Common.o $(OBJDIR)/RequestScheduler.o
 
-example.out : example/example.cpp example/Handlers.cpp Http.a 
-	g++ $(INC) $(STD) $(MACROS) -o $@ $^ -pthread -lstdc++fs
+all : Http.a Http.so exampleStatic.out exampleDynamic.out
 
-Http.a : HttpServer.o HttpRequest.o HttpResponse.o ThreadPool.o Common.o RequestScheduler.o
+
+
+Http.a : $(OBJFILES)
 	ar rcs $@ $^
 
-HttpServer.o : src/HttpServer.cpp Common.o RequestScheduler.o HttpRequest.o HttpResponse.o include/ExportMacros.h include/HttpServer.h
-	g++ $(INC) $(STD) $(MACROS) -c $<
+Http.so : $(OBJFILES)
+	g++ $(INC) $(STD) $(MACROS) -shared -o $@ $^ -pthread
 
-HttpRequest.o : src/HttpRequest.cpp Common.o include/HttpRequest.h include/ExportMacros.h
-	g++ $(INC) $(STD) $(MACROS) -c $<
+exampleStatic.out : example/example.cpp example/Handlers.cpp Http.a 
+	g++ $(INC) $(STD) $(MACROS) -o $@ $^ -pthread -lstdc++fs
 
-HttpResponse.o : src/HttpResponse.cpp Common.o include/HttpResponse.h include/ExportMacros.h
-	g++ $(INC) $(STD) $(MACROS) -c $<
+exampleDynamic.out : example/example.cpp example/Handlers.cpp Http.so
+	g++ -L . $(INC) $(STD) $(MACROS) -o $@ $^ -pthread -lstdc++fs
 
-RequestScheduler.o : src/RequestScheduler.cpp Common.o ThreadPool.o src/RequestScheduler.h
-	g++ $(INC) $(STD) $(MACROS) -c $<
 
-Common.o : src/Common.cpp src/Common.h
-	g++ $(INC) $(STD) $(MACROS) -c $<
 
-ThreadPool.o : src/ThreadPool.cpp src/ThreadPool.h
-	g++ $(INC) $(STD) $(MACROS) -c $<
+HttpServer.o : src/HttpServer.cpp Common.o RequestScheduler.o HttpRequest.o HttpResponse.o include/ExportMacros.h include/HttpServer.h $(OBJDIR)
+	g++ $(INC) $(STD) $(MACROS) -c -fPIC -o $(OBJDIR)/$@ $<
+
+HttpRequest.o : src/HttpRequest.cpp Common.o include/HttpRequest.h include/ExportMacros.h $(OBJDIR)
+	g++ $(INC) $(STD) $(MACROS) -c -fPIC -o $(OBJDIR)/$@ $<
+
+HttpResponse.o : src/HttpResponse.cpp Common.o include/HttpResponse.h include/ExportMacros.h $(OBJDIR)
+	g++ $(INC) $(STD) $(MACROS) -c -fPIC -o $(OBJDIR)/$@ $<
+
+RequestScheduler.o : src/RequestScheduler.cpp Common.o ThreadPool.o src/RequestScheduler.h $(OBJDIR)
+	g++ $(INC) $(STD) $(MACROS) -c -fPIC -o $(OBJDIR)/$@ $<
+
+Common.o : src/Common.cpp src/Common.h $(OBJDIR)
+	g++ $(INC) $(STD) $(MACROS) -c -fPIC -o $(OBJDIR)/$@ $<
+
+ThreadPool.o : src/ThreadPool.cpp src/ThreadPool.h $(OBJDIR)
+	g++ $(INC) $(STD) $(MACROS) -c -fPIC -o $(OBJDIR)/$@ $<
+
+
+
+$(OBJDIR) :
+	mkdir -p $@
+
+$(BINDIR) :
+	mkdir -p $@
 
 clean :
-	rm *.o example.out Http.a
+	rm *.o exampleStatic.out exampleDynamic.out Http.a Http.so
