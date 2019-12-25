@@ -1,53 +1,44 @@
 STD=--std=c++17
 INC=-I include
 MACROS=-D NDEBUG -D DLL
-OBJDIR = obj
-BINDIR = bin
-OBJFILES = $(OBJDIR)/HttpServer.o $(OBJDIR)/HttpRequest.o $(OBJDIR)/HttpResponse.o $(OBJDIR)/ThreadPool.o $(OBJDIR)/Common.o $(OBJDIR)/RequestScheduler.o
 
-all : $(BINDIR)/Http.a $(BINDIR)/Http.so $(BINDIR)/exampleStatic.out $(BINDIR)/exampleDynamic.out
+all : Http.a libHttp.so exampleStatic.out exampleDynamic.out
 
 
 
-$(BINDIR)/Http.a : $(OBJFILES) $(BINDIR)
-	ar rcs $@ $(OBJFILES)
+Http.a : HttpServer.o HttpRequest.o HttpResponse.o RequestScheduler.o Common.o ThreadPool.o
+	ar rcs $@ $^
 
-$(BINDIR)/libHttp.so : $(OBJFILES) $(BINDIR)#HttpServer.o HttpRequest.o HttpResponse.o RequestScheduler.o Common.o ThreadPool.o
-	g++ $(INC) $(STD) $(MACROS) -shared -fvisibility=hidden -o $@ $(OBJFILES) -pthread
+libHttp.so : HttpServer.o HttpRequest.o HttpResponse.o RequestScheduler.o Common.o ThreadPool.o
+	g++ $(INC) $(STD) $(MACROS) -shared -fvisibility=hidden -o $@ $^ -pthread
 
-$(BINDIR)/exampleStatic.out : example/example.cpp example/Handlers.cpp $(BINDIR)/Http.a
+exampleStatic.out : example/example.cpp example/Handlers.cpp Http.a
 	g++ $(INC) $(STD) $(MACROS) -o $@ $^ -pthread -lstdc++fs
 
-$(BINDIR)/exampleDynamic.out : example/example.cpp example/Handlers.cpp $(BINDIR)/libHttp.so
-	g++ -L . $(INC) $(STD) $(MACROS) -o $@ $^ -pthread -lstdc++fs
+exampleDynamic.out : example/example.cpp example/Handlers.cpp libHttp.so
+	g++ -L . $(INC) $(STD) $(MACROS) -o $@ example/example.cpp example/Handlers.cpp -lHttp -pthread -lstdc++fs
 
 
 
-$(OBJDIR)/HttpServer.o : src/HttpServer.cpp $(OBJDIR)/Common.o $(OBJDIR)/RequestScheduler.o $(OBJDIR)/HttpRequest.o $(OBJDIR)/HttpResponse.o include/ExportMacros.h include/HttpServer.h $(OBJDIR)
+HttpServer.o : src/HttpServer.cpp Common.o RequestScheduler.o HttpRequest.o HttpResponse.o include/ExportMacros.h include/HttpServer.h $(OBJDIR)
 	g++ $(INC) $(STD) $(MACROS) -c -fPIC -fvisibility=hidden -o $@ $<
 
-$(OBJDIR)/HttpRequest.o : src/HttpRequest.cpp $(OBJDIR)/Common.o include/HttpRequest.h include/ExportMacros.h $(OBJDIR)
+HttpRequest.o : src/HttpRequest.cpp Common.o include/HttpRequest.h include/ExportMacros.h $(OBJDIR)
 	g++ $(INC) $(STD) $(MACROS) -c -fPIC -fvisibility=hidden -o $@ $<
 
-$(OBJDIR)/HttpResponse.o : src/HttpResponse.cpp $(OBJDIR)/Common.o include/HttpResponse.h include/ExportMacros.h $(OBJDIR)
+HttpResponse.o : src/HttpResponse.cpp Common.o include/HttpResponse.h include/ExportMacros.h $(OBJDIR)
 	g++ $(INC) $(STD) $(MACROS) -c -fPIC -fvisibility=hidden -o $@ $<
 
-$(OBJDIR)/RequestScheduler.o : src/RequestScheduler.cpp $(OBJDIR)/Common.o $(OBJDIR)/ThreadPool.o src/RequestScheduler.h $(OBJDIR)
+RequestScheduler.o : src/RequestScheduler.cpp Common.o ThreadPool.o src/RequestScheduler.h $(OBJDIR)
 	g++ $(INC) $(STD) $(MACROS) -c -fPIC -fvisibility=hidden -o $@ $<
 
-$(OBJDIR)/Common.o : src/Common.cpp src/Common.h $(OBJDIR)
+Common.o : src/Common.cpp src/Common.h $(OBJDIR)
 	g++ $(INC) $(STD) $(MACROS) -c -fPIC -fvisibility=hidden -o $@ $<
 
-$(OBJDIR)/ThreadPool.o : src/ThreadPool.cpp src/ThreadPool.h $(OBJDIR)
+ThreadPool.o : src/ThreadPool.cpp src/ThreadPool.h $(OBJDIR)
 	g++ $(INC) $(STD) $(MACROS) -c -fPIC -fvisibility=hidden -o $@ $<
 
 
 
-$(OBJDIR) :
-	@mkdir -p $@
-
-$(BINDIR) :
-	@mkdir -p $@
-
-.clean :
-	@rm $(OBJDIR)/*.o exampleStatic.out exampleDynamic.out Http.a Http.so
+clean :
+	@rm *.o exampleStatic.out exampleDynamic.out Http.a libHttp.so
