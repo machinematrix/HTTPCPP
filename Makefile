@@ -2,6 +2,8 @@ STD=--std=c++17
 INC=-I include
 MACROS=-D NDEBUG -D DLL
 
+.PHONY: all clean
+
 all : Http.a libHttp.so exampleStatic.out exampleDynamic.out
 
 
