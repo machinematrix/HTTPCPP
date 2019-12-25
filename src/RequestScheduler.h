@@ -63,8 +63,8 @@ class RequestScheduler : public IRequestScheduler
 
 	struct SocketInfo
 	{
-		std::atomic<bool> isBeingServed;
-		std::chrono::steady_clock::time_point creationTimePoint;
+		std::atomic<bool> mIsBeingServed;
+		std::chrono::steady_clock::time_point mLastServedTimePoint;
 
 		SocketInfo(const std::chrono::steady_clock::time_point &creation);
 		SocketInfo(const SocketInfo&);
@@ -73,10 +73,10 @@ class RequestScheduler : public IRequestScheduler
 
 	ThreadPool pool;
 	std::vector<PollFileDescriptor> mSockets;
-	std::vector<SocketInfo> socketInfo; //in tuple: time_point is the time at which the socket was created. atomic flag indicates whether a worker thread is reading from that socket.
+	std::vector<SocketInfo> mSocketInfo; //in tuple: time_point is the time at which the socket was created. atomic flag indicates whether a worker thread is reading from that socket.
 	std::chrono::milliseconds mSocketTimeToLive; //in milliseconds. socket will automatically close if there are no incoming connections for at least this amount of time
 
-	void addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(socketInfo)::size_type index);
+	void addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(mSocketInfo)::size_type index);
 public:
 	RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t mSocketTimeToLive);
 	~RequestScheduler();

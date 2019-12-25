@@ -125,16 +125,17 @@ void PollRequestScheduler::handleRequest(const std::function<void(DescriptorType
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-void RequestScheduler::addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(socketInfo)::size_type index)
+void RequestScheduler::addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(mSocketInfo)::size_type index)
 {
 	callback(mSockets[index].fd);
-	socketInfo[index].isBeingServed.store(false);
+	mSocketInfo[i].mLastServedTimePoint = std::chrono::steady_clock::now();
+	mSocketInfo[index].mIsBeingServed.store(false);
 }
 
 RequestScheduler::RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t mSocketTimeToLive)
 	:pool(threadCount)
 	,mSockets(1, PollFileDescriptor{ serverSocket, POLLIN })
-	,socketInfo(1, std::chrono::steady_clock::now())
+	,mSocketInfo(1, std::chrono::steady_clock::now())
 	,mSocketTimeToLive(mSocketTimeToLive)
 {}
 
@@ -167,16 +168,16 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 	{
 		for (decltype(mSockets)::size_type i = 0; i < mSockets.size();)
 		{
-			if (i && mSockets[i].revents & POLLNVAL && !socketInfo[i].isBeingServed.load()) //if I closed the socket after handling the request, stop monitoring it 
+			if (i && mSockets[i].revents & POLLNVAL && !mSocketInfo[i].mIsBeingServed.load()) //if I closed the socket after handling the request, stop monitoring it 
 			{
 				#ifndef NDEBUG
 				cout << "Socket " << mSockets[i].fd << " was closed by me" << endl;
 				#endif
 
 				mSockets.erase(mSockets.begin() + i);
-				socketInfo.erase(socketInfo.begin() + i);
+				mSocketInfo.erase(mSocketInfo.begin() + i);
 			}
-			else if(i && !socketInfo[i].isBeingServed.load() && (mSockets[i].revents & POLLHUP || steady_clock::now() - socketInfo[i].creationTimePoint > mSocketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
+			else if(i && !mSocketInfo[i].mIsBeingServed.load() && (mSockets[i].revents & POLLHUP || steady_clock::now() - mSocketInfo[i].mLastServedTimePoint > mSocketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
 			{
 				#ifndef NDEBUG
 				cout << "Socket " << mSockets[i].fd << " expired or got hung up, closing it..." << endl;
@@ -184,7 +185,7 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 
 				CloseSocket(mSockets[i].fd);
 				mSockets.erase(mSockets.begin() + i);
-				socketInfo.erase(socketInfo.begin() + i);
+				mSocketInfo.erase(mSocketInfo.begin() + i);
 			}
 			else if (mSockets[i].revents & POLLIN)
 			{
@@ -197,18 +198,18 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 						#endif
 
 						mSockets.push_back({ clientSocket, POLLIN });
-						socketInfo.emplace_back(steady_clock::now());
+						mSocketInfo.emplace_back(steady_clock::now());
 					}
 				}
 				else
 				{
-					if (!socketInfo[i].isBeingServed.load())
+					if (!mSocketInfo[i].mIsBeingServed.load())
 					{
 						#ifndef NDEBUG
 						cout << "Serving request with socket: " << mSockets[i].fd << endl;
 						#endif
 
-						socketInfo[i].isBeingServed.store(true);
+						mSocketInfo[i].mIsBeingServed.store(true);
 						pool.addTask(std::bind(&RequestScheduler::addToThreadPool, this, callback, i));
 					}
 				}
@@ -221,19 +222,19 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 }
 
 RequestScheduler::SocketInfo::SocketInfo(const std::chrono::steady_clock::time_point &creation)
-	:creationTimePoint(creation),
-	isBeingServed(false)
+	:mLastServedTimePoint(creation),
+	mIsBeingServed(false)
 {}
 
 RequestScheduler::SocketInfo::SocketInfo(const SocketInfo &other)
-	:creationTimePoint(other.creationTimePoint),
-	isBeingServed(other.isBeingServed.load())
+	:mLastServedTimePoint(other.mLastServedTimePoint),
+	mIsBeingServed(other.mIsBeingServed.load())
 {}
 
 RequestScheduler::SocketInfo& RequestScheduler::SocketInfo::operator=(const SocketInfo &other)
 {
-	creationTimePoint = other.creationTimePoint;
-	isBeingServed.store(other.isBeingServed.load());
+	mLastServedTimePoint = other.mLastServedTimePoint;
+	mIsBeingServed.store(other.mIsBeingServed.load());
 
 	return *this;
 }
