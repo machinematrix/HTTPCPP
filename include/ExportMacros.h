@@ -1,9 +1,9 @@
 #ifndef __EXPORT_MACROS__
 #define __EXPORT_MACROS__
 
-#ifdef DLL
+#ifdef USE_DLL
 	#ifdef _WIN32
-		#ifdef BUILD_DLL
+		#ifdef _WINDLL
 			#define EXPORT __declspec(dllexport)
 		#else
 			#define EXPORT __declspec(dllimport)
