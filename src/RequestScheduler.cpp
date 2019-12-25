@@ -128,7 +128,7 @@ void PollRequestScheduler::handleRequest(const std::function<void(DescriptorType
 void RequestScheduler::addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(mSocketInfo)::size_type index)
 {
 	callback(mSockets[index].fd);
-	mSocketInfo[i].mLastServedTimePoint = std::chrono::steady_clock::now();
+	mSocketInfo[index].mLastServedTimePoint = std::chrono::steady_clock::now();
 	mSocketInfo[index].mIsBeingServed.store(false);
 }
 
