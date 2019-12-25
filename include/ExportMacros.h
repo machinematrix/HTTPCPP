@@ -8,8 +8,8 @@
 		#else
 			#define EXPORT __declspec(dllimport)
 		#endif
-	#else
-		#define EXPORT
+	#elif defined(__linux__)
+		#define EXPORT __attribute__((visibility("default")))
 	#endif
 #else
 	#define EXPORT
