@@ -226,6 +226,8 @@ Http::Server& Http::Server::operator=(Server &&other) noexcept
 	delete mThis;
 	mThis = other.mThis;
 	other.mThis = nullptr;
+
+	return *this;
 }
 
 void Http::Server::start()

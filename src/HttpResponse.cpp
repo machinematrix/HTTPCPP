@@ -252,6 +252,8 @@ Http::Response& Http::Response::operator=(Response &&other) noexcept
 	delete mThis;
 	mThis = other.mThis;
 	other.mThis = nullptr;
+
+	return *this;
 }
 
 void Http::Response::setBody(const std::vector<std::uint8_t> & mBody)

@@ -412,6 +412,8 @@ Http::Request& Http::Request::operator=(Request &&other) noexcept
 	delete mThis;
 	mThis = other.mThis;
 	other.mThis = nullptr;
+
+	return *this;
 }
 
 std::string_view Http::Request::getMethod()
