@@ -1,5 +1,5 @@
-#include <string>
 #include <map>
+#include <string>
 #include <array>
 #include <regex>
 #include "HttpRequest.h"
@@ -56,17 +56,16 @@ class Http::Request::Impl
 	DescriptorType mSock;
 
 	static const char* getFieldText(HeaderField field);
-	HeaderField getFieldId(const std::string &field);
+	HeaderField getFieldId(const std::string_view &field);
 public:
 	Impl(const SocketWrapper &mSock);
 
-	std::string getMethod();
-	std::string getResourcePath();
-	std::string getVersion();
-	std::string getField(HeaderField field);
-	std::string getRequestStringValue(const std::string&);
-	std::vector<std::string> getRequestStringKeys();
-
+	std::string_view getMethod();
+	std::string_view getResourcePath();
+	std::string_view getVersion();
+	std::string_view getField(HeaderField field);
+	std::optional<std::string_view> getRequestStringValue(const std::string_view&);
+	std::vector<std::string_view> getRequestStringKeys();
 	const decltype(mBody)& getBody();
 };
 
@@ -173,9 +172,9 @@ const char* Http::Request::Impl::getFieldText(HeaderField field)
 	}
 }
 
-Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string &field)
+Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string_view &field)
 {
-	static const std::map<std::string, HeaderField> fieldMap = {
+	static const std::map<std::string_view, HeaderField> fieldMap = {
 		{ getFieldText(HeaderField::AIM), HeaderField::AIM },
 		{ getFieldText(HeaderField::Accept), HeaderField::Accept },
 		{ getFieldText(HeaderField::AcceptCharset), HeaderField::AcceptCharset },
@@ -266,8 +265,10 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		}
 	} while (chances && headerEnd == string::npos);
 
-	if (requestText.empty())
+	if (requestText.empty()) {
+		throw RequestException("Request is empty");
 		return;
+	}
 
 	if (headerEnd == string::npos) {
 		throw RequestException("Header doesn't end");
@@ -295,7 +296,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 
 	for (std::sregex_iterator i(requestText.begin(), requestText.end(), requestHeaderFormat), end; i != end; ++i)
 	{
-		HeaderField id = getFieldId((*i)[1]);
+		HeaderField id = getFieldId((*i)[1].str());
 
 		if (id != HeaderField::Invalid)
 		{
@@ -331,41 +332,46 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 			}
 		}
 	}
+	#ifndef NDEBUG
+	std::cout << "--------------------------------------------------------------" << std::endl;
+	std::cout << requestText << std::endl;
+	std::cout << "--------------------------------------------------------------" << std::endl;
+	#endif
 }
 
-std::string Http::Request::Impl::getMethod()
+std::string_view Http::Request::Impl::getMethod()
 {
 	return mMethod;
 }
 
-std::string Http::Request::Impl::getResourcePath()
+std::string_view Http::Request::Impl::getResourcePath()
 {
 	return mResource;
 }
 
-std::string Http::Request::Impl::getVersion()
+std::string_view Http::Request::Impl::getVersion()
 {
 	return mVersion;
 }
 
-std::string Http::Request::Impl::getField(HeaderField field)
+std::string_view Http::Request::Impl::getField(HeaderField field)
 {
 	return mFields[static_cast<size_t>(field)];
 }
 
-std::string Http::Request::Impl::getRequestStringValue(const std::string &key)
+std::optional<std::string_view> Http::Request::Impl::getRequestStringValue(const std::string_view &key)
 {
 	try {
-		return queryStringArguments.at(key);
+		return queryStringArguments.at(key.data());
 	}
 	catch (const std::out_of_range&) {
-		throw RequestException("Key does not exist");
+		return std::optional<std::string_view>();
 	}
 }
 
-std::vector<std::string> Http::Request::Impl::getRequestStringKeys()
+std::vector<std::string_view> Http::Request::Impl::getRequestStringKeys()
 {
-	std::vector<std::string> result;
+	std::vector<std::string_view> result;
 	result.reserve(queryStringArguments.size());
 
 	for (const decltype(queryStringArguments)::value_type &pair : queryStringArguments) {
@@ -396,32 +402,32 @@ Http::Request::Request(Request&&) noexcept = default;
 
 Http::Request& Http::Request::operator=(Request&&) noexcept = default;
 
-std::string Http::Request::getMethod()
+std::string_view Http::Request::getMethod()
 {
 	return mThis->getMethod();
 }
 
-std::string Http::Request::getResourcePath()
+std::string_view Http::Request::getResourcePath()
 {
 	return mThis->getResourcePath();
 }
 
-std::string Http::Request::getVersion()
+std::string_view Http::Request::getVersion()
 {
 	return mThis->getVersion();
 }
 
-std::string Http::Request::getField(HeaderField field)
+std::string_view Http::Request::getField(HeaderField field)
 {
 	return mThis->getField(field);
 }
 
-std::string Http::Request::getRequestStringValue(const std::string &key)
+std::optional<std::string_view> Http::Request::getRequestStringValue(const std::string_view &key)
 {
 	return mThis->getRequestStringValue(key);
 }
 
-std::vector<std::string> Http::Request::getRequestStringKeys()
+std::vector<std::string_view> Http::Request::getRequestStringKeys()
 {
 	return mThis->getRequestStringKeys();
 }

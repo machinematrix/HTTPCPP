@@ -3,7 +3,7 @@
 #include "ExportMacros.h"
 #include <memory>
 #include <vector>
-#include <string>
+#include <string_view>
 
 namespace Http
 {
@@ -21,10 +21,11 @@ namespace Http
 		Response& operator=(Response&&) noexcept;
 
 		void setBody(const std::vector<std::uint8_t> &body);
-		void setBody(const std::string &body);
+		void setBody(const std::string_view &body);
 		void setStatusCode(std::uint16_t code);
-		void setField(HeaderField field, const std::string &value);
-		std::string getField(HeaderField field);
+		void setField(HeaderField field, const std::string_view &value);
+		std::string_view getField(HeaderField field);
+		void setTimeout(int milliseconds);
 		void send();
 	};
 

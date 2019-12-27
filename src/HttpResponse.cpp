@@ -3,8 +3,13 @@
 #include <sstream>
 #include <map>
 #include <vector>
+#include <chrono>
 #include "HttpResponse.h"
 #include "Common.h"
+
+#ifdef __linux__
+#include <string.h>
+#endif
 
 class Http::Response::Impl
 {
@@ -20,10 +25,11 @@ public:
 	Impl(DescriptorType);
 
 	void setBody(const decltype(mBody)&);
-	void setBody(const std::string&);
+	void setBody(const std::string_view&);
 	void setStatusCode(std::uint16_t);
-	void setField(HeaderField field, const std::string &value);
-	std::string getField(HeaderField);
+	void setField(HeaderField field, const std::string_view &value);
+	std::string_view getField(HeaderField);
+	void setTimeout(unsigned);
 	void send();
 };
 
@@ -129,17 +135,19 @@ const char* Http::Response::Impl::getFieldText(HeaderField field)
 }
 
 Http::Response::Impl::Impl(DescriptorType sock)
-	:mSock(sock),
-	mStatusCode(0),
-	mVersion("1.1")
-{}
+	:mSock(sock)
+	,mStatusCode(0)
+	,mVersion("1.1")
+{
+	setTimeout(5);
+}
 
 void Http::Response::Impl::setBody(const decltype(mBody) &newBody)
 {
 	mBody = newBody;
 }
 
-void Http::Response::Impl::setBody(const std::string &body)
+void Http::Response::Impl::setBody(const std::string_view &body)
 {
 	mBody = decltype(mBody)(body.begin(), body.end());
 }
@@ -149,12 +157,12 @@ void Http::Response::Impl::setStatusCode(std::uint16_t code)
 	mStatusCode = code;
 }
 
-void Http::Response::Impl::setField(HeaderField field, const std::string &value)
+void Http::Response::Impl::setField(HeaderField field, const std::string_view &value)
 {
 	mFields[field] = value;
 }
 
-std::string Http::Response::Impl::getField(Http::Response::HeaderField field)
+std::string_view Http::Response::Impl::getField(Http::Response::HeaderField field)
 {
 	try {
 		return mFields.at(field);
@@ -162,6 +170,16 @@ std::string Http::Response::Impl::getField(Http::Response::HeaderField field)
 	catch (const std::out_of_range&) {
 		return "";
 	}
+}
+
+void Http::Response::Impl::setTimeout(unsigned milliseconds)
+{
+	#ifdef _WIN32
+	DWORD time = milliseconds;
+	#elif defined(__linux__)
+	struct timeval time = { milliseconds / 1000, (milliseconds % 1000) * 1000 };
+	#endif
+	setsockopt(mSock, SOL_SOCKET, SO_SNDTIMEO, (char*)&time, sizeof(time));
 }
 
 void Http::Response::Impl::send()
@@ -193,9 +211,16 @@ void Http::Response::Impl::send()
 
 		if (auxBytesSent > 0)
 			bytesSent += auxBytesSent;
-		else {
-			break;
-			throw ResponseException("");
+		else /*if (auxBytesSent == SOCKET_ERROR)*/ {
+			#ifdef _WIN32
+			LPSTR message;
+			FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
+			std::string strMsg(message);
+			LocalFree(message);
+			throw ResponseException(strMsg);
+			#elif defined(__linux__)
+			throw ResponseException(strerror(errno));
+			#endif
 		}
 	}
 }
@@ -222,7 +247,7 @@ void Http::Response::setBody(const std::vector<std::uint8_t> & mBody)
 	mThis->setBody(mBody);
 }
 
-void Http::Response::setBody(const std::string & mBody)
+void Http::Response::setBody(const std::string_view &mBody)
 {
 	mThis->setBody(mBody);
 }
@@ -232,14 +257,19 @@ void Http::Response::setStatusCode(std::uint16_t code)
 	mThis->setStatusCode(code);
 }
 
-void Http::Response::setField(HeaderField field, const std::string & value)
+void Http::Response::setField(HeaderField field, const std::string_view &value)
 {
 	mThis->setField(field, value);
 }
 
-std::string Http::Response::getField(HeaderField field)
+std::string_view Http::Response::getField(HeaderField field)
 {
 	return mThis->getField(field);
+}
+
+void Http::Response::setTimeout(int milliseconds)
+{
+	mThis->setTimeout(milliseconds);
 }
 
 void Http::Response::send()

@@ -12,7 +12,7 @@
 
 namespace
 {
-	void placeholderLogger(const std::string&)
+	void placeholderLogger(const std::string_view&)
 	{
 
 	}
@@ -43,7 +43,7 @@ public:
 	void start();
 	void setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept;
 	void setErrorLogger(const std::function<LoggerCallback> &callback) noexcept;
-	void setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback);
+	void setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback);
 };
 
 void Http::Server::Impl::serverProcedure()
@@ -82,7 +82,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 
 		for (decltype(mHandlers)::const_iterator handlerSlot = mHandlers.cbegin(); handlerSlot != mHandlers.cend(); ++handlerSlot)
 		{
-			std::string requestResource = request.getResourcePath();
+			std::string_view requestResource = request.getResourcePath();
 			std::string::size_type lastSlash = requestResource.rfind('/');
 
 			if (lastSlash != std::string::npos)
@@ -194,9 +194,9 @@ void Http::Server::Impl::setErrorLogger(const std::function<LoggerCallback>& cal
 	mErrorLogger = (callback ? callback : placeholderLogger);
 }
 
-void Http::Server::Impl::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
+void Http::Server::Impl::setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback)
 {
-	mHandlers[path] = callback;
+	mHandlers[path.data()] = callback;
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -231,7 +231,7 @@ void Http::Server::setErrorLogger(const std::function<LoggerCallback>& callback)
 	mThis->setErrorLogger(callback);
 }
 
-void Http::Server::setResourceCallback(const std::string &path, const std::function<HandlerCallback> &callback)
+void Http::Server::setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback)
 {
 	mThis->setResourceCallback(path, callback);
 }

@@ -2,7 +2,8 @@
 #define __HTTPREQUEST__
 #include "ExportMacros.h"
 #include <memory>
-#include <string>
+#include <string_view>
+#include <optional>
 #include <cstdint>
 #include <vector>
 
@@ -21,12 +22,12 @@ namespace Http
 		Request(Request&&) noexcept;
 		Request& operator=(Request&&) noexcept;
 
-		std::string getMethod();
-		std::string getResourcePath();
-		std::string getVersion();
-		std::string getField(HeaderField field);
-		std::string getRequestStringValue(const std::string &key);
-		std::vector<std::string> getRequestStringKeys();
+		std::string_view getMethod();
+		std::string_view getResourcePath();
+		std::string_view getVersion();
+		std::string_view getField(HeaderField field);
+		std::optional<std::string_view> getRequestStringValue(const std::string_view &key);
+		std::vector<std::string_view> getRequestStringKeys();
 		const std::vector<std::uint8_t>& getBody();
 	};
 
