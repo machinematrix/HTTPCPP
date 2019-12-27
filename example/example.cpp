@@ -3,17 +3,15 @@
 #include <fstream>
 #include <filesystem>
 
-namespace FilesystemNamespace = std::filesystem;
-
 void redirect(Http::Request&, Http::Response&);
 void favicon(Http::Request&, Http::Response&);
 void list(Http::Request&, Http::Response&);
 void image(Http::Request&, Http::Response&);
 void kill(Http::Request&, Http::Response&);
 
-std::vector<std::string> filenames(const std::string &directory)
+std::vector<std::string> filenames(const std::string_view &directory)
 {
-	using FilesystemNamespace::directory_iterator;
+	using std::filesystem::directory_iterator;
 
 	std::vector<std::string> result;
 	directory_iterator iterator(directory), end;
@@ -26,7 +24,7 @@ std::vector<std::string> filenames(const std::string &directory)
 	return result;
 }
 
-std::vector<std::string> getJpgs(const std::string &directory)
+std::vector<std::string> getJpgs(const std::string_view &directory)
 {
 	std::vector<std::string> result(filenames(directory));
 
@@ -42,17 +40,17 @@ std::vector<std::string> getJpgs(const std::string &directory)
 	return result;
 }
 
-std::vector<std::uint8_t> loadFile(const std::string &fileName)
+std::vector<std::uint8_t> loadFile(const std::string_view &fileName)
 {
 	std::vector<std::uint8_t> result;
 	std::streampos size;
-	std::ifstream file(fileName, std::ios::binary | std::ios::ate);
+	std::ifstream file(fileName.data(), std::ios::binary | std::ios::ate);
 
 	if (file.is_open())
 	{
 		size = file.tellg();
 		file.close();
-		file.open(fileName, std::ios::binary);
+		file.open(fileName.data(), std::ios::binary);
 
 		if (file.is_open())
 		{
@@ -69,12 +67,12 @@ std::vector<std::uint8_t> loadFile(const std::string &fileName)
 	return result;
 }
 
-void logger(const std::string &msg)
+void logger(const std::string_view &msg)
 {
 	std::cout << msg << std::endl;
 }
 
-void errorLogger(const std::string &msg)
+void errorLogger(const std::string_view &msg)
 {
 	std::cerr << "Error: " << msg << std::endl;
 }

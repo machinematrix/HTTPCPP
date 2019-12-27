@@ -1,11 +1,12 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <regex>
 #include "HttpResponse.h"
 #include "HttpRequest.h"
 
-std::vector<std::string> getJpgs(const std::string&);
-std::vector<std::uint8_t> loadFile(const std::string&);
+std::vector<std::string> getJpgs(const std::string_view&);
+std::vector<std::uint8_t> loadFile(const std::string_view&);
 
 using Http::Response;
 using Http::Request;
@@ -106,9 +107,9 @@ void image(Request &req, Response &resp) //?name=<image file name>
 
 	auto name = req.getRequestStringValue("name");
 
-	if (name.find_first_of("\\/") == std::string::npos)
+	if (name.has_value() && name.value().find_first_of("\\/") == std::string::npos)
 	{
-		auto fileBytes = loadFile(name);
+		auto fileBytes = loadFile(name.value());
 
 		if (!fileBytes.empty())
 		{
