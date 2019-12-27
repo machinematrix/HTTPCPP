@@ -1,7 +1,6 @@
 #ifndef __HTTPRESPONSE__
 #define __HTTPRESPONSE__
 #include "ExportMacros.h"
-#include <memory>
 #include <vector>
 #include <string_view>
 
@@ -12,7 +11,7 @@ namespace Http
 	class EXPORT Response
 	{
 		class Impl;
-		std::unique_ptr<Impl> mThis;
+		Impl *mThis;
 	public:
 		enum class HeaderField;
 		Response(const SocketWrapper&);

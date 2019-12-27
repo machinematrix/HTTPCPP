@@ -236,11 +236,23 @@ Http::Response::Response(const SocketWrapper &wrapper)
 	:mThis(new Impl(wrapper.mSock))
 {}
 
-Http::Response::~Response() noexcept = default;
+Http::Response::~Response() noexcept
+{
+	delete mThis;
+}
 
-Http::Response::Response(Response &&) noexcept = default;
+Http::Response::Response(Response &&other) noexcept
+	:mThis(other.mThis)
+{
+	other.mThis = nullptr;
+}
 
-Http::Response& Http::Response::operator=(Response&&) noexcept = default;
+Http::Response& Http::Response::operator=(Response &&other) noexcept
+{
+	delete mThis;
+	mThis = other.mThis;
+	other.mThis = nullptr;
+}
 
 void Http::Response::setBody(const std::vector<std::uint8_t> & mBody)
 {

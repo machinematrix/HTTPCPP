@@ -1,7 +1,6 @@
 #ifndef __HTTPREQUEST__
 #define __HTTPREQUEST__
 #include "ExportMacros.h"
-#include <memory>
 #include <string_view>
 #include <optional>
 #include <cstdint>
@@ -13,7 +12,7 @@ namespace Http
 	class EXPORT Request
 	{
 		class Impl;
-		std::unique_ptr<Impl> mThis;
+		Impl *mThis;
 	public:
 		enum class HeaderField : std::size_t;
 

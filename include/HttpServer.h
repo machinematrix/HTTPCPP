@@ -2,7 +2,6 @@
 #define __HTTPSERVERCPP__
 #include "ExportMacros.h"
 #include <cstdint>
-#include <memory>
 #include <stdexcept>
 #include <functional>
 #include <string_view>
@@ -15,7 +14,7 @@ namespace Http
 	class EXPORT Server
 	{
 		class Impl;
-		std::unique_ptr<Impl> mThis;
+		Impl *mThis;
 	public:
 		using HandlerCallback = void(Request&, Response&);
 		using LoggerCallback = void(const std::string_view&);

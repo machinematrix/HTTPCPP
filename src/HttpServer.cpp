@@ -210,11 +210,23 @@ Http::Server::Server(std::uint16_t mPort)
 	:mThis(new Impl(mPort))
 {}
 
-Http::Server::~Server() noexcept = default;
+Http::Server::~Server() noexcept
+{
+	delete mThis;
+}
 
-Http::Server::Server(Server &&other) noexcept = default;
+Http::Server::Server(Server &&other) noexcept
+	:mThis(other.mThis)
+{
+	other.mThis = nullptr;
+}
 
-Http::Server& Http::Server::operator=(Server &&other) noexcept = default;
+Http::Server& Http::Server::operator=(Server &&other) noexcept
+{
+	delete mThis;
+	mThis = other.mThis;
+	other.mThis = nullptr;
+}
 
 void Http::Server::start()
 {

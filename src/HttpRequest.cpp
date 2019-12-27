@@ -396,11 +396,23 @@ Http::Request::Request(const SocketWrapper &sockWrapper)
 	:mThis(new Impl(sockWrapper))
 {}
 
-Http::Request::~Request() noexcept = default;
+Http::Request::~Request() noexcept
+{
+	delete mThis;
+}
 
-Http::Request::Request(Request&&) noexcept = default;
+Http::Request::Request(Request &&other) noexcept
+	:mThis(other.mThis)
+{
+	other.mThis = nullptr;
+}
 
-Http::Request& Http::Request::operator=(Request&&) noexcept = default;
+Http::Request& Http::Request::operator=(Request &&other) noexcept
+{
+	delete mThis;
+	mThis = other.mThis;
+	other.mThis = nullptr;
+}
 
 std::string_view Http::Request::getMethod()
 {
