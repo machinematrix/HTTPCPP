@@ -2,7 +2,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include <list>
+#include <vector>
 #include <tuple>
 #include <condition_variable>
 #include <queue>
@@ -10,13 +10,13 @@
 
 class ThreadPool::Impl
 {
-	std::list<std::tuple<std::atomic<bool>, std::thread>> workers;
-	
+	std::atomic<bool> workFlag;
+	std::vector<std::thread> workers;
 	std::queue<std::function<TaskCallback>> workQueue;
 	std::mutex workMutex; //prevents data races in workStack
 	std::condition_variable workAvailable, noWork;
 
-	void workerProcedure(decltype(workers)::iterator myInfo);
+	void workerProcedure();
 public:
 	Impl(std::size_t);
 	~Impl();
@@ -25,9 +25,9 @@ public:
 	void waitForTasks();
 };
 
-void ThreadPool::Impl::workerProcedure(decltype(workers)::iterator myInfo)
+void ThreadPool::Impl::workerProcedure()
 {
-	while (std::get<0>(*myInfo).load())
+	while (workFlag.load())
 	{
 		std::unique_lock<std::mutex> lck(workMutex);
 
@@ -41,27 +41,25 @@ void ThreadPool::Impl::workerProcedure(decltype(workers)::iterator myInfo)
 				noWork.notify_all();
 		}
 		else
-			workAvailable.wait(lck, [this, myInfo]() { return !workQueue.empty() || !std::get<0>(*myInfo).load(); });
+			workAvailable.wait(lck, [this]() { return !workQueue.empty() || !workFlag.load(); });
 	}
 }
 
 ThreadPool::Impl::Impl(std::size_t workerCount)
+	:workFlag(true)
 {
 	for (size_t i = 0; i < workerCount; ++i)
 	{
-		auto newElem = workers.emplace(workers.end(), true, std::thread());
-		std::get<1>(workers.back()) = std::move(std::thread(&Impl::workerProcedure, this, newElem));
+		auto newElem = workers.emplace(workers.end(), std::thread(&Impl::workerProcedure, this));
 	}
 }
 
 ThreadPool::Impl::~Impl()
 {
-	for (auto &workData : workers) {
-		std::get<0>(workData).store(false);
-	}
+	workFlag.store(false);
 	workAvailable.notify_all();
 	for (auto &workData : workers) {
-		std::get<1>(workData).join();
+		workData.join();
 	}
 }
 
