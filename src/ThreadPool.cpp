@@ -15,6 +15,7 @@ class ThreadPool::Impl
 	std::queue<std::function<TaskCallback>> workQueue;
 	std::mutex workMutex; //prevents data races in workStack
 	std::condition_variable workAvailable, noWork;
+	unsigned busy;
 
 	void workerProcedure();
 public:
@@ -31,11 +32,16 @@ void ThreadPool::Impl::workerProcedure()
 	{
 		std::unique_lock<std::mutex> lck(workMutex);
 
-		if (!workQueue.empty()) {
+		if (!workQueue.empty())
+		{
 			auto task = workQueue.front();
 			workQueue.pop();
+
+			++busy;
 			lck.unlock();
 			task();
+			lck.lock();
+			--busy;
 
 			if(workQueue.empty())
 				noWork.notify_all();
@@ -47,6 +53,7 @@ void ThreadPool::Impl::workerProcedure()
 
 ThreadPool::Impl::Impl(std::size_t workerCount)
 	:workFlag(true)
+	,busy(0)
 {
 	for (size_t i = 0; i < workerCount; ++i)
 	{
@@ -73,7 +80,7 @@ void ThreadPool::Impl::addTask(const std::function<TaskCallback> &task)
 void ThreadPool::Impl::waitForTasks()
 {
 	std::unique_lock<std::mutex> lck(workMutex);
-	noWork.wait(lck, [this]() { return workQueue.empty(); });
+	noWork.wait(lck, [this]() { return workQueue.empty() && !busy; }); //TODO: this returns when the work queue is empty, there could still be threads working
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
