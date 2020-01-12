@@ -1,5 +1,5 @@
 STD=--std=c++17
-INC=-I include
+INC=-iquote include
 MACROS=-D NDEBUG -D USE_DLL
 
 .PHONY: all clean
