@@ -14,7 +14,7 @@
 class Http::Response::Impl
 {
 	WinsockLoader mLoader;
-	std::map<HeaderField, std::string> mFields;
+	std::map<std::string, std::string> mFields;
 	std::string mVersion;
 	std::vector<uint8_t> mBody;
 	DescriptorType mSock;
@@ -25,10 +25,11 @@ public:
 	Impl(DescriptorType);
 
 	void setBody(const decltype(mBody)&);
-	void setBody(const std::string_view&);
+	void setBody(std::string_view);
 	void setStatusCode(std::uint16_t);
-	void setField(HeaderField field, const std::string_view &value);
-	std::string_view getField(HeaderField);
+	void setField(HeaderField field, std::string_view value);
+	void setField(std::string_view field, std::string_view value);
+	std::optional<std::string_view> getField(HeaderField);
 	void setTimeout(unsigned);
 	void send();
 };
@@ -147,7 +148,7 @@ void Http::Response::Impl::setBody(const decltype(mBody) &newBody)
 	mBody = newBody;
 }
 
-void Http::Response::Impl::setBody(const std::string_view &body)
+void Http::Response::Impl::setBody(std::string_view body)
 {
 	mBody = decltype(mBody)(body.begin(), body.end());
 }
@@ -157,18 +158,23 @@ void Http::Response::Impl::setStatusCode(std::uint16_t code)
 	mStatusCode = code;
 }
 
-void Http::Response::Impl::setField(HeaderField field, const std::string_view &value)
+void Http::Response::Impl::setField(HeaderField field, std::string_view value)
 {
-	mFields[field] = value;
+	mFields[getFieldText(field)] = value;
 }
 
-std::string_view Http::Response::Impl::getField(Http::Response::HeaderField field)
+void Http::Response::Impl::setField(std::string_view field, std::string_view value)
+{
+	mFields[field.data()] = value;
+}
+
+std::optional<std::string_view> Http::Response::Impl::getField(Http::Response::HeaderField field)
 {
 	try {
-		return mFields.at(field);
+		return mFields.at(getFieldText(field));
 	}
 	catch (const std::out_of_range&) {
-		return "";
+		return std::optional<std::string_view>();
 	}
 }
 
@@ -187,14 +193,14 @@ void Http::Response::Impl::send()
 	if (!mStatusCode)
 		throw ResponseException("No status code set");
 
-	const char *fieldEnd("\r\n");
+	constexpr const char *fieldEnd = "\r\n";
 
 	decltype(MySend(DescriptorType(), nullptr, 0, 0)) bytesSent = 0;
 
 	std::string response = "HTTP/" + mVersion + ' ' + std::to_string(mStatusCode) + fieldEnd;
 
 	for (const auto &fieldValue : mFields) {
-		response += getFieldText(fieldValue.first);
+		response += fieldValue.first;
 		response += ':';
 		response += ' ';
 		response += fieldValue.second;
@@ -256,12 +262,12 @@ Http::Response& Http::Response::operator=(Response &&other) noexcept
 	return *this;
 }
 
-void Http::Response::setBody(const std::vector<std::uint8_t> & mBody)
+void Http::Response::setBody(const std::vector<std::uint8_t> &mBody)
 {
 	mThis->setBody(mBody);
 }
 
-void Http::Response::setBody(const std::string_view &mBody)
+void Http::Response::setBody(std::string_view mBody)
 {
 	mThis->setBody(mBody);
 }
@@ -271,12 +277,12 @@ void Http::Response::setStatusCode(std::uint16_t code)
 	mThis->setStatusCode(code);
 }
 
-void Http::Response::setField(HeaderField field, const std::string_view &value)
+void Http::Response::setField(HeaderField field, std::string_view value)
 {
 	mThis->setField(field, value);
 }
 
-std::string_view Http::Response::getField(HeaderField field)
+std::optional<std::string_view> Http::Response::getField(HeaderField field)
 {
 	return mThis->getField(field);
 }

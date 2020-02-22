@@ -1,7 +1,7 @@
 #ifndef __REQUEST_SCHEDULER__
 #define __REQUEST_SCHEDULER__
-#include <functional>
 #include <vector>
+#include <map>
 #include <chrono>
 #include <tuple>
 #include <atomic>
@@ -71,12 +71,12 @@ class RequestScheduler : public IRequestScheduler
 		SocketInfo& operator=(const SocketInfo&);
 	};
 
-	ThreadPool pool;
+	ThreadPool mPool;
 	std::vector<PollFileDescriptor> mSockets;
-	std::vector<SocketInfo> mSocketInfo; //in tuple: time_point is the time at which the socket was created. atomic flag indicates whether a worker thread is reading from that socket.
+	std::unordered_map<DescriptorType, SocketInfo> mSocketInfo; //in tuple: time_point is the time at which the socket was created. atomic flag indicates whether a worker thread is reading from that socket.
 	std::chrono::milliseconds mSocketTimeToLive; //in milliseconds. socket will automatically close if there are no incoming connections for at least this amount of time
 
-	void addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(mSocketInfo)::size_type index);
+	void addToThreadPool(const std::function<void(DescriptorType)> &callback, decltype(mSocketInfo)::iterator it);
 public:
 	RequestScheduler(DescriptorType serverSocket, unsigned threadCount, std::uint32_t mSocketTimeToLive);
 	~RequestScheduler();

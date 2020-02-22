@@ -50,7 +50,8 @@ class Http::Request::Impl
 	std::string mMethod;
 	std::string mResource;
 	std::string mVersion;
-	std::array<std::string, static_cast<size_t>(HeaderField::Warning) + 1u> mFields;
+	//std::array<std::string, static_cast<size_t>(HeaderField::Warning) + 1u> mFields;
+	std::map<std::string, std::string> mFields;
 	std::vector<std::uint8_t> mBody;
 	std::map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
@@ -63,8 +64,9 @@ public:
 	std::string_view getMethod();
 	std::string_view getResourcePath();
 	std::string_view getVersion();
-	std::string_view getField(HeaderField field);
-	std::optional<std::string_view> getRequestStringValue(const std::string_view&);
+	std::optional<std::string_view> getField(HeaderField field);
+	std::optional<std::string_view> getField(std::string_view field);
+	std::optional<std::string_view> getRequestStringValue(std::string_view);
 	std::vector<std::string_view> getRequestStringKeys();
 	const decltype(mBody)& getBody();
 };
@@ -260,6 +262,9 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		}
 		else
 		{
+			#ifndef NDEBUG
+			std::cout << WSAGetLastError() << std::endl;
+			#endif
 			Sleep(sleepTime);
 			--chances;
 		}
@@ -270,9 +275,8 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 		return;
 	}
 
-	if (headerEnd == string::npos) {
+	if (headerEnd == string::npos)
 		throw RequestException("Header doesn't end");
-	}
 
 	if (regex_search(requestText, requestLineMatch, requestLineFormat))
 	{
@@ -282,32 +286,29 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 
 		if (regex_match(mResource, queryStringMatch, queryStringFormat))
 		{
-
 			for (std::sregex_iterator it(mResource.begin() + queryStringMatch.position(1), mResource.end(), queryStringParams), end; it != end; ++it)
-			{
 				queryStringArguments[(*it)[1]] = (*it)[2];
-			}
+
 			mResource.erase(mResource.begin() + queryStringMatch.position(1), mResource.end());
 		}
 	}
-	else {
+	else
 		throw RequestException("Request line is malformed");
-	}
 
 	for (std::sregex_iterator i(requestText.begin(), requestText.end(), requestHeaderFormat), end; i != end; ++i)
 	{
-		HeaderField id = getFieldId((*i)[1].str());
+		/*HeaderField id = getFieldId((*i)[1].str());
 
 		if (id != HeaderField::Invalid)
-		{
-			mFields[static_cast<size_t>(id)] = (*i)[2];
-		}
+			mFields[static_cast<size_t>(id)] = (*i)[2];*/
+		mFields[(*i)[1]] = (*i)[2];
 	}
 
 	try {
-		contentLength = std::stoul(mFields.at(static_cast<decltype(mFields)::size_type>(HeaderField::ContentLength)));
+		//contentLength = std::stoul(mFields.at(static_cast<decltype(mFields)::size_type>(HeaderField::ContentLength)));
+		contentLength = std::stoul(mFields.at(getFieldText(HeaderField::ContentLength)));
 	}
-	catch (const std::invalid_argument&) {
+	catch (const std::out_of_range&) {
 		contentLength = 0;
 	}
 
@@ -332,11 +333,11 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 			}
 		}
 	}
-	#ifndef NDEBUG
+	/*#ifndef NDEBUG
 	std::cout << "--------------------------------------------------------------" << std::endl;
 	std::cout << requestText << std::endl;
 	std::cout << "--------------------------------------------------------------" << std::endl;
-	#endif
+	#endif*/
 }
 
 std::string_view Http::Request::Impl::getMethod()
@@ -354,12 +355,18 @@ std::string_view Http::Request::Impl::getVersion()
 	return mVersion;
 }
 
-std::string_view Http::Request::Impl::getField(HeaderField field)
+std::optional<std::string_view> Http::Request::Impl::getField(HeaderField field)
 {
-	return mFields[static_cast<size_t>(field)];
+	//return mFields[static_cast<size_t>(field)];
+	return mFields.at(getFieldText(field));
 }
 
-std::optional<std::string_view> Http::Request::Impl::getRequestStringValue(const std::string_view &key)
+std::optional<std::string_view> Http::Request::Impl::getField(std::string_view field)
+{
+	return mFields.at(field.data());
+}
+
+std::optional<std::string_view> Http::Request::Impl::getRequestStringValue(std::string_view key)
 {
 	try {
 		return queryStringArguments.at(key.data());
@@ -431,12 +438,17 @@ std::string_view Http::Request::getVersion()
 	return mThis->getVersion();
 }
 
-std::string_view Http::Request::getField(HeaderField field)
+std::optional<std::string_view> Http::Request::getField(HeaderField field)
 {
 	return mThis->getField(field);
 }
 
-std::optional<std::string_view> Http::Request::getRequestStringValue(const std::string_view &key)
+std::optional<std::string_view> Http::Request::getField(std::string_view field)
+{
+	return mThis->getField(field);
+}
+
+std::optional<std::string_view> Http::Request::getRequestStringValue(std::string_view key)
 {
 	return mThis->getRequestStringValue(key);
 }

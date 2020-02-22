@@ -4,6 +4,7 @@
 #include <atomic>
 #include <map>
 #include <string>
+#include <algorithm>
 #include "Common.h"
 #include "HttpServer.h"
 #include "HttpRequest.h"
@@ -13,9 +14,7 @@
 namespace
 {
 	void placeholderLogger(const std::string_view&)
-	{
-
-	}
+	{}
 }
 
 class Http::Server::Impl
@@ -27,8 +26,8 @@ class Http::Server::Impl
 	std::thread mServerThread;
 	std::condition_variable mStatusChanged;
 	
-	std::function<LoggerCallback> mEndpointLogger = placeholderLogger; //pointer (4|8 bytes)
-	std::function<LoggerCallback> mErrorLogger = placeholderLogger; //pointer (4|8 bytes)
+	std::function<LoggerCallback> mEndpointLogger = placeholderLogger;
+	std::function<LoggerCallback> mErrorLogger = placeholderLogger;
 	DescriptorType mSock;
 	const int mQueueLength = 5;
 	std::uint16_t mPort;
@@ -48,21 +47,17 @@ public:
 
 void Http::Server::Impl::serverProcedure()
 {
-	if (listen(mSock, mQueueLength) != SOCKET_ERROR) {
+	if (listen(mSock, mQueueLength) != SOCKET_ERROR)
 		mStatus.store(ServerStatus::RUNNING);
-	}
-	else {
+	else
 		mStatus.store(ServerStatus::STOPPED);
-	}
 
 	mStatusChanged.notify_all();
 
-	std::unique_ptr<IRequestScheduler> scheduler(new RequestScheduler(mSock, 8, 5000));
+	std::unique_ptr<IRequestScheduler> scheduler(new RequestScheduler(mSock, std::thread::hardware_concurrency(), 5000));
 
 	while (mStatus.load() == ServerStatus::RUNNING)
-	{
 		scheduler->handleRequest(std::bind(&Impl::handleRequest, this, std::placeholders::_1));
-	}
 }
 
 Http::Server::Impl::~Impl()
@@ -105,17 +100,23 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 				Response response(SocketWrapper{ clientSocket });
 				bestMatch->second(request, response);
 
-				auto requestConnectionHeader = request.getField(Request::HeaderField::Connection);
-				auto responseConnectionHeader = response.getField(Response::HeaderField::Connection);
+				auto requestConnectionHeader = request.getField(Request::HeaderField::Connection), responseConnectionHeader = response.getField(Response::HeaderField::Connection);
 
-				if (!(requestConnectionHeader.empty() || requestConnectionHeader == "keep-alive" && responseConnectionHeader == requestConnectionHeader))
-					CloseSocket(clientSocket);
+				if (requestConnectionHeader && responseConnectionHeader)
+				{
+					std::string requestConnectionHeaderCopy = requestConnectionHeader.value().data();
+					std::transform(requestConnectionHeaderCopy.begin(), requestConnectionHeaderCopy.end(), requestConnectionHeaderCopy.begin(), tolower); //Edge sends Keep-alive, instead of keep-alive
+
+					if (!(requestConnectionHeaderCopy == "keep-alive" && responseConnectionHeader.value() == requestConnectionHeaderCopy))
+						CloseSocket(clientSocket);
+				}
 
 				logMessage += bestMatch->first;
 				logMessage.push_back('\"');
 				mEndpointLogger(logMessage);
 			}
-			catch (const std::exception & e) {
+			catch (const std::exception &e)
+			{
 				Response serverErrorResponse(SocketWrapper{ clientSocket });
 
 				logMessage = "Exception thrown at endpoint ";
