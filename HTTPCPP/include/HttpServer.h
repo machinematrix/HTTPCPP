@@ -17,7 +17,7 @@ namespace Http
 		Impl *mThis;
 	public:
 		using HandlerCallback = void(Request&, Response&);
-		using LoggerCallback = void(const std::string_view&);
+		using LoggerCallback = void(std::string_view);
 
 		Server(std::uint16_t mPort);
 		~Server() noexcept;

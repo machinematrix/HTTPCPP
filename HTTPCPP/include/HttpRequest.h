@@ -24,8 +24,9 @@ namespace Http
 		std::string_view getMethod();
 		std::string_view getResourcePath();
 		std::string_view getVersion();
-		std::string_view getField(HeaderField field);
-		std::optional<std::string_view> getRequestStringValue(const std::string_view &key);
+		std::optional<std::string_view> getField(HeaderField field);
+		std::optional<std::string_view> getField(std::string_view field);
+		std::optional<std::string_view> getRequestStringValue(std::string_view key);
 		std::vector<std::string_view> getRequestStringKeys();
 		const std::vector<std::uint8_t>& getBody();
 	};
