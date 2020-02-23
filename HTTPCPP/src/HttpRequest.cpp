@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include <map>
 #include <string>
 #include <array>
@@ -27,7 +28,7 @@ class NonBlockSocket
 public:
 	NonBlockSocket(DescriptorType sock)
 		:mSocket(sock)
-		, toggle(1)
+		,toggle(1)
 	{
 		ioctlsocket(mSocket, FIONBIO, &toggle);
 	}
@@ -50,10 +51,9 @@ class Http::Request::Impl
 	std::string mMethod;
 	std::string mResource;
 	std::string mVersion;
-	//std::array<std::string, static_cast<size_t>(HeaderField::Warning) + 1u> mFields;
-	std::map<std::string, std::string> mFields;
+	std::map<std::string, std::string, decltype(CaseInsensitiveComparator)*> mFields;
 	std::vector<std::uint8_t> mBody;
-	std::map<std::string, std::string> queryStringArguments;
+	std::unordered_map<std::string, std::string> queryStringArguments;
 	DescriptorType mSock;
 
 	static const char* getFieldText(HeaderField field);
@@ -176,7 +176,7 @@ const char* Http::Request::Impl::getFieldText(HeaderField field)
 
 Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string_view &field)
 {
-	static const std::map<std::string_view, HeaderField> fieldMap = {
+	static const std::unordered_map<std::string_view, HeaderField> fieldMap = {
 		{ getFieldText(HeaderField::AIM), HeaderField::AIM },
 		{ getFieldText(HeaderField::Accept), HeaderField::Accept },
 		{ getFieldText(HeaderField::AcceptCharset), HeaderField::AcceptCharset },
@@ -230,7 +230,8 @@ Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string_vie
 }
 
 Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
-	:mSock(sockWrapper.mSock)
+	:mSock(sockWrapper.mSock),
+	mFields(CaseInsensitiveComparator)
 {
 	using std::string;
 	using std::array;
@@ -295,18 +296,14 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 	else
 		throw RequestException("Request line is malformed");
 
-	for (std::sregex_iterator i(requestText.begin(), requestText.end(), requestHeaderFormat), end; i != end; ++i)
-	{
-		/*HeaderField id = getFieldId((*i)[1].str());
-
-		if (id != HeaderField::Invalid)
-			mFields[static_cast<size_t>(id)] = (*i)[2];*/
+	for (std::sregex_iterator i(requestText.begin() + requestLineMatch[0].str().size(), requestText.end(), requestHeaderFormat), end; i != end; ++i)
 		mFields[(*i)[1]] = (*i)[2];
-	}
 
 	try {
-		//contentLength = std::stoul(mFields.at(static_cast<decltype(mFields)::size_type>(HeaderField::ContentLength)));
 		contentLength = std::stoul(mFields.at(getFieldText(HeaderField::ContentLength)));
+	}
+	catch (const std::invalid_argument&) {
+		contentLength = 0;
 	}
 	catch (const std::out_of_range&) {
 		contentLength = 0;
@@ -333,11 +330,6 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 			}
 		}
 	}
-	/*#ifndef NDEBUG
-	std::cout << "--------------------------------------------------------------" << std::endl;
-	std::cout << requestText << std::endl;
-	std::cout << "--------------------------------------------------------------" << std::endl;
-	#endif*/
 }
 
 std::string_view Http::Request::Impl::getMethod()
@@ -357,13 +349,22 @@ std::string_view Http::Request::Impl::getVersion()
 
 std::optional<std::string_view> Http::Request::Impl::getField(HeaderField field)
 {
-	//return mFields[static_cast<size_t>(field)];
-	return mFields.at(getFieldText(field));
+	try {
+		return mFields.at(getFieldText(field));
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 std::optional<std::string_view> Http::Request::Impl::getField(std::string_view field)
 {
-	return mFields.at(field.data());
+	try {
+		return mFields.at(field.data());
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 std::optional<std::string_view> Http::Request::Impl::getRequestStringValue(std::string_view key)

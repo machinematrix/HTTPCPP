@@ -14,7 +14,7 @@
 class Http::Response::Impl
 {
 	WinsockLoader mLoader;
-	std::map<std::string, std::string> mFields;
+	std::map<std::string, std::string, decltype(CaseInsensitiveComparator)*> mFields;
 	std::string mVersion;
 	std::vector<uint8_t> mBody;
 	DescriptorType mSock;
@@ -30,6 +30,7 @@ public:
 	void setField(HeaderField field, std::string_view value);
 	void setField(std::string_view field, std::string_view value);
 	std::optional<std::string_view> getField(HeaderField);
+	std::optional<std::string_view> getField(std::string_view);
 	void setTimeout(unsigned);
 	void send();
 };
@@ -139,6 +140,7 @@ Http::Response::Impl::Impl(DescriptorType sock)
 	:mSock(sock)
 	,mStatusCode(0)
 	,mVersion("1.1")
+	,mFields(CaseInsensitiveComparator)
 {
 	setTimeout(5);
 }
@@ -172,6 +174,16 @@ std::optional<std::string_view> Http::Response::Impl::getField(Http::Response::H
 {
 	try {
 		return mFields.at(getFieldText(field));
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
+}
+
+std::optional<std::string_view> Http::Response::Impl::getField(std::string_view field)
+{
+	try {
+		return mFields.at(field.data());
 	}
 	catch (const std::out_of_range&) {
 		return std::optional<std::string_view>();
@@ -282,7 +294,17 @@ void Http::Response::setField(HeaderField field, std::string_view value)
 	mThis->setField(field, value);
 }
 
+void Http::Response::setField(std::string_view field, std::string_view value)
+{
+	mThis->setField(field, value);
+}
+
 std::optional<std::string_view> Http::Response::getField(HeaderField field)
+{
+	return mThis->getField(field);
+}
+
+std::optional<std::string_view> Http::Response::getField(std::string_view field)
 {
 	return mThis->getField(field);
 }

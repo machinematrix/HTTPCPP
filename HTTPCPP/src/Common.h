@@ -25,6 +25,8 @@ inline void CloseSocket(DescriptorType sock)
 	closesocket(sock);
 }
 #endif
+#include <algorithm>
+#include <string>
 
 //To avoid conversion warnings between integer types of different width
 template<typename SizeType>
@@ -45,6 +47,15 @@ inline ssize_t MySend(DescriptorType sock, const void *buffer, SizeType bufferSi
 	#elif defined(__linux__)
 	return send(sock, buffer, static_cast<size_t>(bufferSize), flags);
 	#endif
+}
+
+inline bool CaseInsensitiveComparator(const std::string &lhs, const std::string &rhs)
+{
+	return std::lexicographical_compare(lhs.cbegin(),
+										lhs.cend(),
+										rhs.cbegin(),
+										rhs.cend(),
+										[](char lhs, char rhs) -> bool { return std::toupper(lhs) < std::toupper(rhs); });
 }
 
 //calls WSAStartup on construction and WSACleanup on destruction

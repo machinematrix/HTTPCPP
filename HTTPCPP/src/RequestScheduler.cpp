@@ -164,70 +164,69 @@ void RequestScheduler::handleRequest(const std::function<void(DescriptorType)> &
 	int result = poll(mSockets.data(), mSockets.size(), 1000);
 	#endif
 
-	if (result != SOCKET_ERROR)
+	if (result == SOCKET_ERROR)
+		return;
+
+	for (/*decltype(mSockets)::size_type*/std::int64_t i = static_cast<std::int64_t>(mSockets.size() - 1); i >= 0; --i)
 	{
-		for (decltype(mSockets)::size_type i = 0; i < mSockets.size();)
+		if (mSockets[i].revents & POLLIN)
 		{
-			if (mSockets[i].revents & POLLIN)
+			if (!i) //if it's the server socket
 			{
-				if (!i) //if it's the server socket
+				DescriptorType clientSocket = accept(mSockets[i].fd, nullptr, nullptr);
+
+				if (clientSocket != SOCKET_ERROR)
 				{
-					DescriptorType clientSocket = accept(mSockets[i].fd, nullptr, nullptr);
+					#ifndef NDEBUG
+					cout << __func__ << ' ' << "accept() returned socket " << clientSocket << endl;
+					#endif
+					mSockets.push_back({ clientSocket, POLLIN });
 
-					if (clientSocket != SOCKET_ERROR) {
-						#ifndef NDEBUG
-						cout << "New socket: " << clientSocket << endl;
-						#endif
-
-						mSockets.push_back({ clientSocket, POLLIN });
-						if (!mSocketInfo.emplace(clientSocket, steady_clock::now()).second) {
-							#ifndef NDEBUG
-							std::cout << "SOCKET " << clientSocket << " ALREADY EXISTED ON THE MAP" << std::endl;
-							#endif
-						}
-					}
-				}
-				else
-				{
-					auto it = mSocketInfo.find(mSockets[i].fd);
-
-					if (!it->second.mIsBeingServed.load())
+					if (!mSocketInfo.emplace(clientSocket, steady_clock::now()).second)
 					{
 						#ifndef NDEBUG
-						cout << "Serving request with socket: " << mSockets[i].fd << endl;
+						std::cout << __func__ << ' ' << "SOCKET RETURNED FROM accept() (" << clientSocket << ") ALREADY EXISTED ON THE MAP" << std::endl;
 						#endif
-
-						it->second.mIsBeingServed.store(true);
-						mPool.addTask(std::bind(&RequestScheduler::addToThreadPool, this, callback, it));
 					}
 				}
-				++i;
-			}
-			else if (i && 
-					 mSockets[i].revents & POLLNVAL && 
-					 !mSocketInfo.find(mSockets[i].fd)->second.mIsBeingServed.load()) //if I closed the socket after handling the request, stop monitoring it 
-			{
-				#ifndef NDEBUG
-				cout << "Socket " << mSockets[i].fd << " was closed by me" << endl;
-				#endif
-
-				mSocketInfo.erase(mSocketInfo.find(mSockets[i].fd));
-				mSockets.erase(mSockets.begin() + i);
-			}
-			else if (i &&
-					 !mSocketInfo.find(mSockets[i].fd)->second.mIsBeingServed.load() &&
-					 (mSockets[i].revents & POLLHUP || steady_clock::now() - mSocketInfo.find(mSockets[i].fd)->second.mLastServedTimePoint > mSocketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
-			{
-				#ifndef NDEBUG
-				cout << "Socket " << mSockets[i].fd << " expired or got hung up, closing it..." << endl;
-				#endif
-
-				CloseSocket(mSockets[i].fd);
-				mSocketInfo.erase(mSocketInfo.find(mSockets[i].fd));
-				mSockets.erase(mSockets.begin() + i);
 			}
 			else
-				++i;
+			{
+				auto it = mSocketInfo.find(mSockets[i].fd);
+
+				if (!it->second.mIsBeingServed.load())
+				{
+					#ifndef NDEBUG
+					cout << __func__ << ' ' << "Serving request with socket: " << mSockets[i].fd << endl;
+					#endif
+
+					it->second.mIsBeingServed.store(true);
+					mPool.addTask(std::bind(&RequestScheduler::addToThreadPool, this, callback, it));
+				}
+			}
+		}
+		else if (i &&
+				 mSockets[i].revents & POLLNVAL &&
+				 !mSocketInfo.find(mSockets[i].fd)->second.mIsBeingServed.load()) //if I closed the socket after handling the request, stop monitoring it 
+		{
+			#ifndef NDEBUG
+			cout << __func__ << ' ' << "Socket " << mSockets[i].fd << " was closed by me" << endl;
+			#endif
+
+			mSocketInfo.erase(mSocketInfo.find(mSockets[i].fd));
+			mSockets.erase(mSockets.begin() + i);
+		}
+		else if (i &&
+				 !mSocketInfo.find(mSockets[i].fd)->second.mIsBeingServed.load() &&
+				 (mSockets[i].revents & POLLHUP || steady_clock::now() - mSocketInfo.find(mSockets[i].fd)->second.mLastServedTimePoint > mSocketTimeToLive)) //if the other side disconnected or if the sockets TTL has expired, close the socket.
+		{
+			#ifndef NDEBUG
+			cout << __func__ << ' ' << "Socket " << mSockets[i].fd << " expired or got hung up, closing it..." << endl;
+			#endif
+
+			CloseSocket(mSockets[i].fd);
+			mSocketInfo.erase(mSocketInfo.find(mSockets[i].fd));
+			mSockets.erase(mSockets.begin() + i);
 		}
 	}
 }

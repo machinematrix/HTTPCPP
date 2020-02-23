@@ -24,7 +24,9 @@ namespace Http
 		void setBody(std::string_view body);
 		void setStatusCode(std::uint16_t code);
 		void setField(HeaderField field, std::string_view value);
+		void setField(std::string_view field, std::string_view value);
 		std::optional<std::string_view> getField(HeaderField field);
+		std::optional<std::string_view> getField(std::string_view field);
 		void setTimeout(int milliseconds);
 		void send();
 	};
