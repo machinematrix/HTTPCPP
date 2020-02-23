@@ -19,7 +19,7 @@ namespace Http
 		using HandlerCallback = void(Request&, Response&);
 		using LoggerCallback = void(std::string_view);
 
-		Server(std::uint16_t mPort);
+		Server(std::uint16_t mPort, int connectionQueueLength = 6);
 		~Server() noexcept;
 		Server(Server&&) noexcept;
 		Server& operator=(Server&&) noexcept;

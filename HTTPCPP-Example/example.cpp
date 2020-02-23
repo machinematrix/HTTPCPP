@@ -133,7 +133,7 @@ int main()
 
 	try {
 		std::string input;
-		Http::Server sv(80); //you'll need root privileges to start a server on ports under 1024
+		Http::Server sv(80, 100); //you'll need root privileges to start a server on ports under 1024
 
 		sv.setResourceCallback("/images", std::bind(list, std::placeholders::_1, std::placeholders::_2, "image", ".jpg"));
 		sv.setResourceCallback("/videos", std::bind(list, std::placeholders::_1, std::placeholders::_2, "video", ".mp4"));

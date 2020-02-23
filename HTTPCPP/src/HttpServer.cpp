@@ -29,14 +29,14 @@ class Http::Server::Impl
 	std::function<LoggerCallback> mEndpointLogger = placeholderLogger;
 	std::function<LoggerCallback> mErrorLogger = placeholderLogger;
 	DescriptorType mSock;
-	const int mQueueLength = 5;
+	const int mQueueLength;
 	std::uint16_t mPort;
 	std::atomic<ServerStatus> mStatus; //1 byte
 
 	void serverProcedure();
 	void handleRequest(DescriptorType) const;
 public:
-	Impl(std::uint16_t mPort);
+	Impl(std::uint16_t port, int);
 	~Impl();
 
 	void start();
@@ -139,15 +139,16 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 	}
 }
 
-Http::Server::Impl::Impl(std::uint16_t mPort)
+Http::Server::Impl::Impl(std::uint16_t port, int connectionQueueLength)
 	:mSock(socket(AF_INET, SOCK_STREAM, 0))
-	,mPort(mPort)
+	,mPort(port)
 	,mStatus(ServerStatus::UNINITIALIZED)
 	,mEndpointLogger(placeholderLogger)
+	,mQueueLength(connectionQueueLength)
 {
 	char optval[8] = {};
 	const char *error = "Could not create server";
-	std::string strPort = std::to_string(mPort);
+	std::string strPort = std::to_string(port);
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPtr(nullptr, freeaddrinfo);
 
 	if (mSock == INVALID_SOCKET)
@@ -207,8 +208,8 @@ void Http::Server::Impl::setResourceCallback(const std::string_view &path, const
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Server::Server(std::uint16_t mPort)
-	:mThis(new Impl(mPort))
+Http::Server::Server(std::uint16_t mPort, int connectionQueueLength)
+	:mThis(new Impl(mPort, connectionQueueLength))
 {}
 
 Http::Server::~Server() noexcept
