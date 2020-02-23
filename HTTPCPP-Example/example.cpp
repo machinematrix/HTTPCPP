@@ -5,9 +5,9 @@
 
 void redirect(Http::Request&, Http::Response&);
 void favicon(Http::Request&, Http::Response&);
-void list(Http::Request&, Http::Response&);
+void list(Http::Request&, Http::Response&, std::string_view endpoint, std::string_view extension);
 void image(Http::Request&, Http::Response&);
-void kill(Http::Request&, Http::Response&);
+void video(Http::Request &req, Http::Response &resp);
 
 std::vector<std::string> filenames(const std::string_view &directory)
 {
@@ -24,14 +24,15 @@ std::vector<std::string> filenames(const std::string_view &directory)
 	return result;
 }
 
-std::vector<std::string> getJpgs(const std::string_view &directory)
+std::vector<std::string> getFilesWithExtension(std::string_view directory, std::string_view extension)
 {
 	std::vector<std::string> result(filenames(directory));
 
 	for (auto i = result.begin(); i != result.end();)
 	{
-		auto extension = i->find(".jpg");
-		if (extension != std::wstring::npos && extension == i->size() - 4)
+		auto ext = i->find(extension.data());
+
+		if (ext != std::wstring::npos && ext == i->size() - 4)
 			++i;
 		else
 			i = result.erase(i);
@@ -40,25 +41,72 @@ std::vector<std::string> getJpgs(const std::string_view &directory)
 	return result;
 }
 
-std::vector<std::uint8_t> loadFile(const std::string_view &fileName)
+std::streampos getFileSize(const std::string_view &fileName)
 {
-	std::vector<std::uint8_t> result;
-	std::streampos size;
+	std::streampos result = 0;
 	std::ifstream file(fileName.data(), std::ios::binary | std::ios::ate);
 
 	if (file.is_open())
 	{
-		size = file.tellg();
-		file.close();
-		file.open(fileName.data(), std::ios::binary);
+		result = file.tellg();
+	}
+
+	return result;
+}
+
+//STREAM MUST BE OPEN IN BINARY MODE
+std::streampos getFileSize(std::ifstream &file)
+{
+	std::streampos result = 0;
+
+	if (file.is_open())
+	{
+		auto auxPos = file.tellg(); //save current position
+		file.seekg(std::streamoff(0), std::ios_base::end); //go to end
+		result = file.tellg(); //save size
+		file.seekg(auxPos); //go back to previous position
+	}
+
+	return result;
+}
+
+std::vector<std::uint8_t> loadFile(const std::string_view &fileName)
+{
+	std::vector<std::uint8_t> result;
+	std::streampos size = getFileSize(fileName);
+	std::ifstream file(fileName.data(), std::ios::binary);
+
+	if (file.is_open())
+	{
+		std::streamsize bytesRead = 0;
+		result.resize(size);
+
+		while (file) {
+			file.read((char*)(result.data()) + bytesRead, 512);
+			bytesRead += file.gcount();
+		}
+	}
+
+	return result;
+}
+
+//range overflows file
+std::vector<std::uint8_t> loadFile(const std::string_view &fileName, std::streampos first, std::streampos last)
+{
+	std::vector<std::uint8_t> result;
+
+	if (first < last)
+	{
+		std::ifstream file(fileName.data(), std::ios::binary);
 
 		if (file.is_open())
 		{
 			std::streamsize bytesRead = 0;
-			result.resize(size);
+			result.resize(last - first);
+			file.seekg(first);
 
-			while (file) {
-				file.read((char*)(result.data()) + bytesRead, 512);
+			while (bytesRead < last - first) {
+				file.read((char*)(result.data()) + bytesRead, last - first - bytesRead);
 				bytesRead += file.gcount();
 			}
 		}
@@ -67,12 +115,12 @@ std::vector<std::uint8_t> loadFile(const std::string_view &fileName)
 	return result;
 }
 
-void logger(const std::string_view &msg)
+void logger(std::string_view msg)
 {
 	std::cout << msg << std::endl;
 }
 
-void errorLogger(const std::string_view &msg)
+void errorLogger(std::string_view msg)
 {
 	std::cerr << "Error: " << msg << std::endl;
 }
@@ -87,12 +135,14 @@ int main()
 		std::string input;
 		Http::Server sv(80); //you'll need root privileges to start a server on ports under 1024
 
-		sv.setResourceCallback("/image", image);
-		sv.setResourceCallback("/list", list);
+		sv.setResourceCallback("/images", std::bind(list, std::placeholders::_1, std::placeholders::_2, "image", ".jpg"));
+		sv.setResourceCallback("/videos", std::bind(list, std::placeholders::_1, std::placeholders::_2, "video", ".mp4"));
 		sv.setResourceCallback("/", redirect);
 		sv.setResourceCallback("/favicon.ico", favicon);
-		sv.setEndpointLogger(logger);
-		sv.setErrorLogger(logger);
+		sv.setResourceCallback("/image", image);
+		sv.setResourceCallback("/video", video); //Only works with Chrome and Firefox for some reason
+		//sv.setEndpointLogger(logger);
+		//sv.setErrorLogger(logger);
 		sv.start();
 
 		do
