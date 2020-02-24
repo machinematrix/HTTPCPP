@@ -145,6 +145,9 @@ void video(Request &req, Response &resp) //?name=<video file name>
 {
 	if (req.getMethod() != "GET") {
 		sendNotAllowed(req, resp, "GET");
+		#ifndef NDEBUG
+		std::cout << "Request was not GET, it was " << req.getMethod() << std::endl;
+		#endif
 		return;
 	}
 
@@ -153,23 +156,26 @@ void video(Request &req, Response &resp) //?name=<video file name>
 	if (name && name.value().find_first_of("\\/") == std::string::npos)
 	{
 		static std::regex rangeFormat("bytes=([[:digit:]]+)-([[:digit:]]*)");
-		std::smatch results;
-		std::string range;
+		std::cmatch results;
 		std::vector<std::uint8_t> chunk;
 		std::size_t rangeBegin = 0, rangeEnd = 0, fileSize = getFileSize(name.value());
+		auto range = req.getField(Request::HeaderField::Range);
 
-		range = req.getField(Request::HeaderField::Range).value_or("bytes=0-");
 		resp.setField(Response::HeaderField::ContentType, "video/mp4");
 		resp.setField(Response::HeaderField::CacheControl, "no-store");
 
 		setKeepAlive(req, resp);
 
-		if (std::regex_match(range, results, rangeFormat))
+		if (range && std::regex_match(range.value().data(), results, rangeFormat))
 		{
+			#ifndef NDEBUG
+			std::cout << "<<------Range: " << range.value() << std::endl;
+			#endif
 			rangeBegin = std::stoull(results[1]);
 			rangeEnd = (results[2].str().empty() ? std::min<decltype(chunk)::size_type>(rangeBegin + 1024 * 1024, fileSize) : std::stoull(results[2]));
 
-			if (rangeBegin < rangeEnd && rangeEnd <= fileSize) {
+			if (rangeBegin < rangeEnd && rangeEnd <= fileSize)
+			{
 				chunk = loadFile(name.value(), rangeBegin, rangeEnd);
 
 				resp.setField(Response::HeaderField::ContentRange, "bytes " + std::to_string(rangeBegin) + '-' + std::to_string(rangeEnd - 1) + '/' + std::to_string(fileSize));
@@ -177,7 +183,7 @@ void video(Request &req, Response &resp) //?name=<video file name>
 				resp.setBody(chunk);
 				resp.setStatusCode(206);
 				#ifndef NDEBUG
-				std::cout << "Content-Range: " << resp.getField("content-range").value() << std::endl;
+				std::cout << "------>>Content-Range: " << resp.getField("content-range").value() << std::endl;
 				#endif
 			}
 			else {
@@ -186,10 +192,6 @@ void video(Request &req, Response &resp) //?name=<video file name>
 				std::cout << "Sending request unsatisfiable" << std::endl;
 				#endif
 			}
-
-			#ifndef NDEBUG
-			std::cout << range << std::endl;
-			#endif
 		}
 		else {
 			resp.setStatusCode(200);
@@ -197,7 +199,6 @@ void video(Request &req, Response &resp) //?name=<video file name>
 			#ifndef NDEBUG
 			std::cout << "Sending AcceptRanges" << std::endl;
 			#endif
-			//rangeEnd = std::min<size_t>(1024 * 1024, fileSize);
 		}
 	}
 	else
