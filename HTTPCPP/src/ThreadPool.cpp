@@ -10,12 +10,12 @@
 
 class ThreadPool::Impl
 {
-	std::atomic<bool> workFlag;
-	std::vector<std::thread> workers;
-	std::queue<std::function<TaskCallback>> workQueue;
-	std::mutex workMutex; //prevents data races in workStack
-	std::condition_variable workAvailable, noWork;
-	unsigned busy;
+	std::atomic<bool> mWorkFlag;
+	std::vector<std::thread> mWorkers;
+	std::queue<std::function<TaskCallback>> mWorkQueue;
+	std::mutex mWorkMutex; //prevents data races in workStack
+	std::condition_variable mWorkAvailable, mNoWork;
+	unsigned mBusy;
 
 	void workerProcedure();
 public:
@@ -28,44 +28,44 @@ public:
 
 void ThreadPool::Impl::workerProcedure()
 {
-	while (workFlag.load())
+	while (mWorkFlag.load())
 	{
-		std::unique_lock<std::mutex> lck(workMutex);
+		std::unique_lock<std::mutex> lck(mWorkMutex);
 
-		if (!workQueue.empty())
+		if (!mWorkQueue.empty())
 		{
-			auto task = workQueue.front();
-			workQueue.pop();
+			auto task = mWorkQueue.front();
+			mWorkQueue.pop();
 
-			++busy;
+			++mBusy;
 			lck.unlock();
 			task();
 			lck.lock();
-			--busy;
+			--mBusy;
 
-			if(workQueue.empty())
-				noWork.notify_all();
+			if(mWorkQueue.empty())
+				mNoWork.notify_all();
 		}
 		else
-			workAvailable.wait(lck, [this]() { return !workQueue.empty() || !workFlag.load(); });
+			mWorkAvailable.wait(lck, [this]() { return !mWorkQueue.empty() || !mWorkFlag.load(); });
 	}
 }
 
 ThreadPool::Impl::Impl(std::size_t workerCount)
-	:workFlag(true)
-	,busy(0)
+	:mWorkFlag(true)
+	,mBusy(0)
 {
 	for (size_t i = 0; i < workerCount; ++i)
 	{
-		auto newElem = workers.emplace(workers.end(), std::thread(&Impl::workerProcedure, this));
+		auto newElem = mWorkers.emplace(mWorkers.end(), std::thread(&Impl::workerProcedure, this));
 	}
 }
 
 ThreadPool::Impl::~Impl()
 {
-	workFlag.store(false);
-	workAvailable.notify_all();
-	for (auto &workData : workers) {
+	mWorkFlag.store(false);
+	mWorkAvailable.notify_all();
+	for (auto &workData : mWorkers) {
 		workData.join();
 	}
 }
@@ -73,14 +73,14 @@ ThreadPool::Impl::~Impl()
 void ThreadPool::Impl::addTask(const std::function<TaskCallback> &task)
 {
 	std::unique_lock<std::mutex>(workMutex);
-	workQueue.emplace(task);
-	workAvailable.notify_one();
+	mWorkQueue.emplace(task);
+	mWorkAvailable.notify_one();
 }
 
 void ThreadPool::Impl::waitForTasks()
 {
-	std::unique_lock<std::mutex> lck(workMutex);
-	noWork.wait(lck, [this]() { return workQueue.empty() && !busy; }); //TODO: this returns when the work queue is empty, there could still be threads working
+	std::unique_lock<std::mutex> lck(mWorkMutex);
+	mNoWork.wait(lck, [this]() { return mWorkQueue.empty() && !mBusy; });
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
