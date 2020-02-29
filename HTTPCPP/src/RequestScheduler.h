@@ -19,40 +19,6 @@ public:
 	virtual void handleRequest(const std::function<void(DescriptorType)> &callback) = 0;
 };
 
-class ThreadPoolRequestScheduler : public IRequestScheduler
-{
-	ThreadPool mPool;
-	DescriptorType mServerSocket;
-public:
-	ThreadPoolRequestScheduler(unsigned threadCount, DescriptorType serverSocket);
-	~ThreadPoolRequestScheduler();
-	virtual void handleRequest(const std::function<void(DescriptorType)> &callback) override;
-};
-
-class SelectRequestScheduler : public IRequestScheduler
-{
-	DescriptorType mServerSocket;
-	DescriptorType mMaxFileDescriptor;
-	fd_set descriptors;
-public:
-	SelectRequestScheduler(DescriptorType serverSocket);
-	virtual void handleRequest(const std::function<void(DescriptorType)> &callback) override;
-};
-
-class PollRequestScheduler : public IRequestScheduler
-{
-	#ifdef _WIN32
-	using PollFileDescriptor = WSAPOLLFD;
-	#elif defined(__linux__)
-	using PollFileDescriptor = pollfd;
-	#endif
-
-	std::vector<PollFileDescriptor> mSockets;
-public:
-	PollRequestScheduler(DescriptorType serverSocket);
-	virtual void handleRequest(const std::function<void(DescriptorType)> &callback) override;
-};
-
 class RequestScheduler : public IRequestScheduler
 {
 	#ifdef _WIN32
