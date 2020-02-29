@@ -23,11 +23,15 @@ WinsockLoader::~WinsockLoader()
 }
 
 WinsockLoader::WinsockLoader(const WinsockLoader&)
-	:WinsockLoader()
+	:WinsockLoader() //delegating constructor
 {}
+
+WinsockLoader::WinsockLoader(WinsockLoader&&) noexcept = default;
 
 WinsockLoader& WinsockLoader::operator=(const WinsockLoader&)
 {
 	startup();
 	return *this;
 }
+
+WinsockLoader& WinsockLoader::operator=(WinsockLoader&&) noexcept = default;

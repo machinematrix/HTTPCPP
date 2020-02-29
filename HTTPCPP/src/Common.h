@@ -66,9 +66,9 @@ public:
 	WinsockLoader();
 	~WinsockLoader();
 	WinsockLoader(const WinsockLoader&);
-	WinsockLoader(WinsockLoader&&) = default;
+	WinsockLoader(WinsockLoader&&) noexcept;
 	WinsockLoader& operator=(const WinsockLoader&);
-	WinsockLoader& operator=(WinsockLoader&&) = default;
+	WinsockLoader& operator=(WinsockLoader&&) noexcept;
 };
 
 namespace Http
