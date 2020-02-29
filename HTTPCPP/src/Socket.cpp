@@ -8,7 +8,7 @@
 
 namespace
 {
-	std::string formatMessage(unsigned msg)
+	std::string formatMessage(int msg)
 	{
 		std::string result;
 
@@ -171,6 +171,15 @@ Socket Socket::accept()
 std::int64_t Socket::receive(void *buffer, size_t bufferSize, int flags)
 {
 	std::int64_t result = recv(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
+
+	checkReturn(static_cast<int>(result));
+
+	return result;
+}
+
+std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
+{
+	std::int64_t result = ::send(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
 
 	checkReturn(static_cast<int>(result));
 

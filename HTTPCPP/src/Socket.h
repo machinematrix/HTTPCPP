@@ -1,6 +1,7 @@
 #ifndef __SOCKET__
 #define __SOCKET__
 #include <cstdint>
+#include <string_view>
 #include "Common.h"
 
 class Socket
@@ -24,6 +25,7 @@ public:
 	void toggleBlocking(bool toggle);
 	Socket accept();
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags);
+	std::int64_t send(void *buffer, size_t bufferSize, int flags);
 };
 
 #endif
