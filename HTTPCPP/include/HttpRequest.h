@@ -5,10 +5,12 @@
 #include <optional>
 #include <cstdint>
 #include <vector>
+#include <memory>
+
+class Socket;
 
 namespace Http
 {
-	struct SocketWrapper;
 	class EXPORT Request
 	{
 		class Impl;
@@ -16,7 +18,7 @@ namespace Http
 	public:
 		enum class HeaderField : std::size_t;
 
-		Request(const SocketWrapper&);
+		Request(const std::shared_ptr<Socket>&);
 		~Request() noexcept;
 		Request(Request&&) noexcept;
 		Request& operator=(Request&&) noexcept;

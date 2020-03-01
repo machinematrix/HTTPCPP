@@ -4,18 +4,19 @@
 #include <vector>
 #include <string_view>
 #include <optional>
+#include <memory>
+
+class Socket;
 
 namespace Http
 {
-	struct SocketWrapper;
-
 	class EXPORT Response
 	{
 		class Impl;
 		Impl *mThis;
 	public:
 		enum class HeaderField;
-		Response(const SocketWrapper&);
+		Response(const std::shared_ptr<Socket>&);
 		~Response() noexcept;
 		Response(Response&&) noexcept;
 		Response& operator=(Response&&) noexcept;

@@ -5,16 +5,54 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include <memory>
 #include "Common.h"
 #include "HttpServer.h"
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "RequestScheduler.h"
+#include "Socket.h"
+
+#include <iostream>
 
 namespace
 {
 	void placeholderLogger(const std::string_view&)
 	{}
+
+	#ifdef _WIN32
+	using PollFileDescriptor = WSAPOLLFD;
+	#elif defined(__linux__)
+	using PollFileDescriptor = pollfd;
+	#endif
+
+	struct SocketInfo
+	{
+		std::atomic<bool> mIsBeingServed;
+		std::chrono::steady_clock::time_point mLastServedTimePoint;
+
+		SocketInfo(const std::chrono::steady_clock::time_point &creation);
+		SocketInfo(const SocketInfo&);
+		SocketInfo& operator=(const SocketInfo&);
+	};
+
+	SocketInfo::SocketInfo(const std::chrono::steady_clock::time_point &creation)
+		:mLastServedTimePoint(creation),
+		mIsBeingServed(false)
+	{}
+
+	SocketInfo::SocketInfo(const SocketInfo &other)
+		: mLastServedTimePoint(other.mLastServedTimePoint),
+		mIsBeingServed(other.mIsBeingServed.load())
+	{}
+
+	SocketInfo& SocketInfo::operator=(const SocketInfo &other)
+	{
+		mLastServedTimePoint = other.mLastServedTimePoint;
+		mIsBeingServed.store(other.mIsBeingServed.load());
+
+		return *this;
+	}
 }
 
 class Http::Server::Impl
@@ -28,13 +66,15 @@ class Http::Server::Impl
 	
 	std::function<LoggerCallback> mEndpointLogger = placeholderLogger;
 	std::function<LoggerCallback> mErrorLogger = placeholderLogger;
-	DescriptorType mSock;
+	std::shared_ptr<Socket> mSock;
 	const int mQueueLength;
 	std::uint16_t mPort;
 	std::atomic<ServerStatus> mStatus; //1 byte
 
 	void serverProcedure();
-	void handleRequest(DescriptorType) const;
+	void serve(std::shared_ptr<Socket>, decltype(PollFileDescriptor::revents), ThreadPool&, SocketPoller&, std::unordered_map<std::shared_ptr<Socket>, SocketInfo>, std::chrono::milliseconds);
+	void dispatch(std::unordered_map<std::shared_ptr<Socket>, SocketInfo>::iterator);
+	void handleRequest(std::shared_ptr<Socket>) const;
 public:
 	Impl(std::uint16_t port, int);
 	~Impl();
@@ -47,32 +87,116 @@ public:
 
 void Http::Server::Impl::serverProcedure()
 {
-	if (listen(mSock, mQueueLength) != SOCKET_ERROR)
+	using namespace std::placeholders;
+	try {
+		mSock->listen(mQueueLength);
 		mStatus.store(ServerStatus::RUNNING);
-	else
+	}
+	catch (const std::runtime_error &e) {
+		mErrorLogger(e.what());
 		mStatus.store(ServerStatus::STOPPED);
+	}
 
 	mStatusChanged.notify_all();
 
-	std::unique_ptr<IRequestScheduler> scheduler(new RequestScheduler(mSock, std::thread::hardware_concurrency(), 5000));
+	std::unordered_map<std::shared_ptr<Socket>, SocketInfo> mSocketInfo;
+	SocketPoller poller;
+	ThreadPool pool(std::thread::hardware_concurrency());
+	std::chrono::milliseconds socketTTL;
+
+	poller.addSocket(mSock, POLLIN);
 
 	while (mStatus.load() == ServerStatus::RUNNING)
-		scheduler->handleRequest(std::bind(&Impl::handleRequest, this, std::placeholders::_1));
+	{
+		//scheduler->handleRequest(std::bind(&Impl::handleRequest, this, std::placeholders::_1));
+		poller.poll(1000, std::bind(&Impl::serve, this, _1, _2, std::ref(pool), std::ref(poller), std::ref(mSocketInfo), socketTTL));
+	}
+}
+
+void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFileDescriptor::revents) revents, ThreadPool &mPool, SocketPoller &poller, std::unordered_map<std::shared_ptr<Socket>, SocketInfo> mSocketInfo, std::chrono::milliseconds mSocketTimeToLive)
+{
+	using std::cout;
+	using std::endl;
+	using std::chrono::steady_clock;
+
+	if (revents & POLLIN)
+	{
+		if (socket == mSock) //if it's the server socket
+		{
+			std::shared_ptr<Socket> clientSocket(new Socket(socket->accept()));
+
+			#ifndef NDEBUG
+			cout << __func__ << ' ' << "accept() returned socket " << clientSocket << endl;
+			#endif
+			poller.addSocket(clientSocket, POLLIN);
+
+			if (!mSocketInfo.emplace(clientSocket, steady_clock::now()).second)
+			{
+				#ifndef NDEBUG
+				std::cout << __func__ << ' ' << "SOCKET RETURNED FROM accept() (" << clientSocket << ") ALREADY EXISTED ON THE MAP" << std::endl;
+				#endif
+			}
+		}
+		else
+		{
+			auto it = mSocketInfo.find(socket);
+
+			if (!it->second.mIsBeingServed.load())
+			{
+				#ifndef NDEBUG
+				cout << __func__ << ' ' << "Serving request with socket: " << socket << endl;
+				#endif
+
+				it->second.mIsBeingServed.store(true);
+				mPool.addTask(std::bind(&Impl::dispatch, this, it));
+			}
+		}
+	}
+	else if (socket != mSock &&
+			 revents & POLLNVAL &&
+			 !mSocketInfo.find(socket)->second.mIsBeingServed.load())
+	{ //if I closed the socket after handling the request, stop monitoring it
+		#ifndef NDEBUG
+		cout << __func__ << ' ' << "Socket " << socket << " was closed by me" << endl;
+		#endif
+
+		mSocketInfo.erase(mSocketInfo.find(socket));
+		poller.removeSocket(*socket);
+		//mSockets.erase(mSockets.begin() + i);
+	}
+	else if (socket != mSock &&
+			 !mSocketInfo.find(socket)->second.mIsBeingServed.load() &&
+			 (revents & POLLHUP || steady_clock::now() - mSocketInfo.find(socket)->second.mLastServedTimePoint > mSocketTimeToLive))
+	{ //if the other side disconnected or if the sockets TTL has expired, close the socket.
+		#ifndef NDEBUG
+		cout << __func__ << ' ' << "Socket " << socket << " expired or got hung up, closing it..." << endl;
+		#endif
+
+		mSocketInfo.erase(mSocketInfo.find(socket));
+		poller.removeSocket(*socket);
+	}
+}
+
+void Http::Server::Impl::dispatch(std::unordered_map<std::shared_ptr<Socket>, SocketInfo>::iterator it)
+{
+	handleRequest(it->first);
+	it->second.mLastServedTimePoint = std::chrono::steady_clock::now();
+	it->second.mIsBeingServed.store(false);
 }
 
 Http::Server::Impl::~Impl()
 {
 	mStatus.store(ServerStatus::STOPPED);
-	CloseSocket(mSock);
+	mSock->close();
 	if(mServerThread.joinable())
 		mServerThread.join();
 }
 
-void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
+void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) const
 {
 	try
 	{
-		Request request(SocketWrapper{ clientSocket });
+		Request request(clientSocket);
 		decltype(mHandlers)::const_iterator bestMatch = mHandlers.cend();
 
 		for (decltype(mHandlers)::const_iterator handlerSlot = mHandlers.cbegin(); handlerSlot != mHandlers.cend(); ++handlerSlot)
@@ -83,9 +207,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 			if (lastSlash != std::string::npos)
 			{
 				std::string::size_type matchPos = requestResource.find(handlerSlot->first);
-				if (matchPos == 0
-					&& !handlerSlot->first.compare(0, lastSlash + 1, requestResource, 0, lastSlash + 1)
-					)
+				if (!matchPos && !handlerSlot->first.compare(0, lastSlash + 1, requestResource, 0, lastSlash + 1))
 				{ //if it matches at the beginning, and to the last slash
 					if (bestMatch == mHandlers.cend() || handlerSlot->first.size() > bestMatch->first.size())
 						bestMatch = handlerSlot;
@@ -97,7 +219,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 		{
 			std::string logMessage("Served request at endpoint \"");
 			try {
-				Response response(SocketWrapper{ clientSocket });
+				Response response(clientSocket);
 				bestMatch->second(request, response);
 
 				auto requestConnectionHeader = request.getField(Request::HeaderField::Connection), responseConnectionHeader = response.getField(Response::HeaderField::Connection);
@@ -108,7 +230,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 					std::transform(requestConnectionHeaderCopy.begin(), requestConnectionHeaderCopy.end(), requestConnectionHeaderCopy.begin(), tolower); //Edge sends Keep-alive, instead of keep-alive
 
 					if (!(requestConnectionHeaderCopy == "keep-alive" && responseConnectionHeader.value() == requestConnectionHeaderCopy))
-						CloseSocket(clientSocket);
+						clientSocket->close();
 				}
 
 				logMessage += bestMatch->first;
@@ -117,7 +239,7 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 			}
 			catch (const std::exception &e)
 			{
-				Response serverErrorResponse(SocketWrapper{ clientSocket });
+				Response serverErrorResponse(clientSocket);
 
 				logMessage = "Exception thrown at endpoint ";
 				logMessage.append(bestMatch->first);
@@ -129,49 +251,24 @@ void Http::Server::Impl::handleRequest(DescriptorType clientSocket) const
 				serverErrorResponse.setField(Response::HeaderField::CacheControl, "no-store");
 				serverErrorResponse.setField(Response::HeaderField::Connection, "close");
 				serverErrorResponse.send();
-				CloseSocket(clientSocket);
+				clientSocket->close();
 			}
 		}
 	}
 	catch (const RequestException &e) {
 		mEndpointLogger(e.what());
-		CloseSocket(clientSocket);
+		clientSocket->close();
 	}
 }
 
 Http::Server::Impl::Impl(std::uint16_t port, int connectionQueueLength)
-	:mSock(socket(AF_INET, SOCK_STREAM, 0))
+	:mSock(new Socket(AF_INET, SOCK_STREAM, 0))
 	,mPort(port)
 	,mStatus(ServerStatus::UNINITIALIZED)
 	,mEndpointLogger(placeholderLogger)
 	,mQueueLength(connectionQueueLength)
 {
-	char optval[8] = {};
-	const char *error = "Could not create server";
-	std::string strPort = std::to_string(port);
-	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPtr(nullptr, freeaddrinfo);
-
-	if (mSock == INVALID_SOCKET)
-		throw ServerException("Could not create socket");
-
-	if (setsockopt(mSock, SOL_SOCKET, SO_REUSEADDR, optval, sizeof(optval)))
-		throw ServerException(error);
-
-	{
-		addrinfo *list = NULL, hint = { 0 };
-		hint.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
-		hint.ai_family = AF_INET; //IPv4
-		hint.ai_socktype = SOCK_STREAM;
-		hint.ai_protocol = IPPROTO_TCP;
-		if (getaddrinfo(nullptr, strPort.c_str(), &hint, &list))
-			throw ServerException(error);
-		addressListPtr.reset(list);
-	}
-
-	auto len = addressListPtr->ai_addrlen;
-
-	if (bind(mSock, addressListPtr->ai_addr, len) == SOCKET_ERROR)
-		throw ServerException(error);
+	mSock->bind("localhost", mPort, false);
 }
 
 void Http::Server::Impl::start()

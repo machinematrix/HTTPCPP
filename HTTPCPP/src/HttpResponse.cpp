@@ -6,6 +6,7 @@
 #include <chrono>
 #include "HttpResponse.h"
 #include "Common.h"
+#include "Socket.h"
 
 #ifdef __linux__
 #include <string.h>
@@ -17,12 +18,12 @@ class Http::Response::Impl
 	std::map<std::string, std::string, decltype(CaseInsensitiveComparator)*> mFields;
 	std::string mVersion;
 	std::vector<uint8_t> mBody;
-	DescriptorType mSock;
+	std::shared_ptr<Socket> mSock;
 	std::uint16_t mStatusCode;
 
 	static const char* getFieldText(HeaderField field);
 public:
-	Impl(DescriptorType);
+	Impl(const std::shared_ptr<Socket>&);
 
 	void setBody(const decltype(mBody)&);
 	void setBody(std::string_view);
@@ -136,7 +137,7 @@ const char* Http::Response::Impl::getFieldText(HeaderField field)
 	}
 }
 
-Http::Response::Impl::Impl(DescriptorType sock)
+Http::Response::Impl::Impl(const std::shared_ptr<Socket> &sock)
 	:mSock(sock)
 	,mStatusCode(0)
 	,mVersion("1.1")
@@ -197,7 +198,7 @@ void Http::Response::Impl::setTimeout(unsigned milliseconds)
 	#elif defined(__linux__)
 	struct timeval time = { milliseconds / 1000, (milliseconds % 1000) * 1000 };
 	#endif
-	setsockopt(mSock, SOL_SOCKET, SO_SNDTIMEO, (char*)&time, sizeof(time));
+	//setsockopt(mSock, SOL_SOCKET, SO_SNDTIMEO, (char*)&time, sizeof(time));
 }
 
 void Http::Response::Impl::send()
@@ -225,7 +226,7 @@ void Http::Response::Impl::send()
 
 	while (bytesSent < (decltype(bytesSent))response.size())
 	{
-		decltype(bytesSent) auxBytesSent = MySend(mSock, response.data() + bytesSent, response.size() - bytesSent, 0);
+		decltype(bytesSent) auxBytesSent = mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
 
 		if (auxBytesSent > 0)
 			bytesSent += auxBytesSent;
@@ -250,8 +251,8 @@ void Http::Response::Impl::send()
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Response::Response(const SocketWrapper &wrapper)
-	:mThis(new Impl(wrapper.mSock))
+Http::Response::Response(const std::shared_ptr<Socket> &wrapper)
+	:mThis(new Impl(wrapper))
 {}
 
 Http::Response::~Response() noexcept

@@ -5,6 +5,7 @@
 #include <regex>
 #include "HttpRequest.h"
 #include "Common.h"
+#include "Socket.h"
 
 #ifndef NDEBUG
 #include <iostream>
@@ -54,12 +55,12 @@ class Http::Request::Impl
 	std::map<std::string, std::string, decltype(CaseInsensitiveComparator)*> mFields;
 	std::vector<std::uint8_t> mBody;
 	std::unordered_map<std::string, std::string> queryStringArguments;
-	DescriptorType mSock;
+	std::shared_ptr<Socket> mSock;
 
 	static const char* getFieldText(HeaderField field);
 	HeaderField getFieldId(const std::string_view &field);
 public:
-	Impl(const SocketWrapper &mSock);
+	Impl(const std::shared_ptr<Socket> &mSock);
 
 	std::string_view getMethod();
 	std::string_view getResourcePath();
@@ -229,8 +230,8 @@ Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string_vie
 	return result;
 }
 
-Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
-	:mSock(sockWrapper.mSock),
+Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
+	:mSock(sockWrapper),
 	mFields(CaseInsensitiveComparator)
 {
 	using std::string;
@@ -239,7 +240,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 
 	#ifdef _WIN32
 	int flags = 0;
-	NonBlockSocket nonBlock(mSock);
+	mSock->toggleBlocking(false);
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
@@ -253,7 +254,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 
 	do
 	{
-		auto bytesRead = MyRecv(mSock, buffer.data(), buffer.size(), flags);
+		auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
 
 		if (bytesRead != SOCKET_ERROR && bytesRead > 0)
 		{
@@ -316,7 +317,7 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 
 		while (mBody.size() < contentLength && chances)
 		{
-			auto bytesRead = MyRecv(mSock, buffer.data(), buffer.size(), flags);
+			auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
 
 			if (bytesRead != SOCKET_ERROR && bytesRead > 0)
 			{
@@ -330,6 +331,10 @@ Http::Request::Impl::Impl(const SocketWrapper &sockWrapper)
 			}
 		}
 	}
+
+	#ifdef _WIN32
+	mSock->toggleBlocking(true);
+	#endif
 }
 
 std::string_view Http::Request::Impl::getMethod()
@@ -400,7 +405,7 @@ const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Request::Request(const SocketWrapper &sockWrapper)
+Http::Request::Request(const std::shared_ptr<Socket> &sockWrapper)
 	:mThis(new Impl(sockWrapper))
 {}
 
