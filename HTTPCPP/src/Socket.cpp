@@ -2,6 +2,8 @@
 #include <stdexcept>
 #include <algorithm>
 
+#include <iostream>
+
 #ifdef _WIN32
 #pragma comment(lib, "Secur32.lib")
 #endif
@@ -50,7 +52,7 @@ Socket::Socket(DescriptorType sock)
 	protocol(0)
 {
 	sockaddr name;
-	int nameLen = 0, typeLen = sizeof(type);
+	int nameLen = sizeof(name), typeLen = sizeof(type);
 
 	try
 	{
@@ -59,8 +61,9 @@ Socket::Socket(DescriptorType sock)
 
 		domain = name.sa_family;
 	}
-	catch (const std::runtime_error&)
+	catch (const std::runtime_error &e)
 	{
+		std::cout << e.what() << std::endl;
 		close();
 		throw;
 	}
@@ -243,6 +246,6 @@ void SocketPoller::poll(int timeout, std::function<void(decltype(mSockets)::valu
 
 	if (!mSockets.empty() && !mPollFdList.empty())
 		for (std::int64_t i = static_cast<std::int64_t>(mPollFdList.size() - 1); i >= 0; --i)
-			if (mPollFdList[i].revents)
+			//if (mPollFdList[i].revents)
 				callback(mSockets[i], mPollFdList[i].revents);
 }
