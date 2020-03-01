@@ -10,12 +10,14 @@
 #include <poll.h>
 #endif
 
+class WinsockLoader;
+
 class Socket
 {
 	friend class SocketPoller;
 	friend bool operator!=(const Socket&, const Socket&) noexcept;
 	friend bool operator<(const Socket&, const Socket&) noexcept;
-	WinsockLoader loader;
+	std::unique_ptr<WinsockLoader> loader;
 	DescriptorType mSock;
 	int domain, type, protocol;
 public:

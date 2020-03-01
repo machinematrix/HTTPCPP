@@ -28,19 +28,6 @@ inline bool CaseInsensitiveComparator(const std::string &lhs, const std::string 
 										[](char lhs, char rhs) -> bool { return std::toupper(lhs) < std::toupper(rhs); });
 }
 
-//calls WSAStartup on construction and WSACleanup on destruction
-class WinsockLoader
-{
-	static void startup();
-public:
-	WinsockLoader();
-	~WinsockLoader();
-	WinsockLoader(const WinsockLoader&);
-	WinsockLoader(WinsockLoader&&) noexcept;
-	WinsockLoader& operator=(const WinsockLoader&);
-	WinsockLoader& operator=(WinsockLoader&&) noexcept;
-};
-
 namespace Http
 {
 	struct SocketWrapper

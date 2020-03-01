@@ -14,7 +14,6 @@
 
 class Http::Response::Impl
 {
-	WinsockLoader mLoader;
 	std::map<std::string, std::string, decltype(CaseInsensitiveComparator)*> mFields;
 	std::string mVersion;
 	std::vector<uint8_t> mBody;

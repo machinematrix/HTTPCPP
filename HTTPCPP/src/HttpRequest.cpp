@@ -48,7 +48,6 @@ public:
 class Http::Request::Impl
 {
 	static std::regex requestHeaderFormat, requestLineFormat, queryStringFormat, queryStringParams;
-	WinsockLoader mLoader;
 	std::string mMethod;
 	std::string mResource;
 	std::string mVersion;

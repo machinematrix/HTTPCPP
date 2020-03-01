@@ -47,8 +47,48 @@ namespace
 	#endif
 }
 
+//calls WSAStartup on construction and WSACleanup on destruction
+class WinsockLoader
+{
+	static void startup()
+	{
+		#ifdef _WIN32
+		WSADATA wsaData;
+		if (auto ret = WSAStartup(MAKEWORD(2, 2), &wsaData))
+			throw std::runtime_error(formatMessage(ret));
+		#endif
+	}
+public:
+	WinsockLoader()
+	{
+		startup();
+	}
+
+	~WinsockLoader()
+	{
+		#ifdef _WIN32
+		WSACleanup();
+		#endif
+	}
+
+	WinsockLoader(const WinsockLoader&)
+		:WinsockLoader() //delegating constructor
+	{}
+
+	WinsockLoader(WinsockLoader&&) noexcept = default;
+
+	WinsockLoader& operator=(const WinsockLoader&)
+	{
+		startup();
+		return *this;
+	}
+
+	WinsockLoader& operator=(WinsockLoader&&) noexcept = default;
+};
+
 Socket::Socket(DescriptorType sock)
-	:mSock(sock),
+	:loader(new WinsockLoader),
+	mSock(sock),
 	domain(0),
 	type(0),
 	protocol(0)
@@ -76,7 +116,8 @@ Socket::Socket(DescriptorType sock)
 }
 
 Socket::Socket(int domain, int type, int protocol)
-	:mSock(socket(domain, type, protocol)),
+	:loader(new WinsockLoader),
+	mSock(socket(domain, type, protocol)),
 	domain(domain),
 	type(type),
 	protocol(protocol)
@@ -260,6 +301,5 @@ void SocketPoller::poll(int timeout, std::function<void(decltype(mSockets)::valu
 
 	if (!mSockets.empty() && !mPollFdList.empty())
 		for (std::int64_t i = static_cast<std::int64_t>(mPollFdList.size() - 1); i >= 0; --i)
-			//if (mPollFdList[i].revents)
-				callback(mSockets[i], mPollFdList[i].revents);
+			callback(mSockets[i], mPollFdList[i].revents);
 }
