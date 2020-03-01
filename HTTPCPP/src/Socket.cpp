@@ -4,6 +4,10 @@
 
 #ifdef _WIN32
 #pragma comment(lib, "Secur32.lib")
+#elif defined __linux__
+#include <poll.h>
+#include <cstring>
+#include <fcntl.h>
 #endif
 
 namespace
@@ -18,7 +22,7 @@ namespace
 		result = message;
 		LocalFree(message);
 		#elif defined(__linux__)
-		result = strerror(msg);
+		result = std::strerror(msg);
 		#endif
 
 		return result;
@@ -49,8 +53,13 @@ Socket::Socket(DescriptorType sock)
 	type(0),
 	protocol(0)
 {
+	#ifdef	_WIN32
+	using StructLength = int;
+	#elif defined __linux__
+	using StructLength = socklen_t;
+	#endif
 	sockaddr name;
-	int nameLen = sizeof(name), typeLen = sizeof(type);
+	StructLength nameLen = sizeof(name), typeLen = sizeof(type);
 
 	try
 	{
@@ -76,7 +85,7 @@ Socket::Socket(int domain, int type, int protocol)
 		#ifdef _WIN32
 		throw std::runtime_error(formatMessage(WSAGetLastError()));
 		#elif defined (__linux__)
-		throw std::runtime_error(errno);
+		throw std::runtime_error(formatMessage(errno));
 		#endif
 
 	try
@@ -124,7 +133,7 @@ void Socket::close()
 	#ifdef _WIN32
 	closesocket(mSock);
 	#elif defined (__linux__)
-	close(mSock);
+	::close(mSock);
 	#endif
 }
 
@@ -152,8 +161,16 @@ void Socket::listen(int queueLength)
 
 void Socket::toggleBlocking(bool toggle)
 {
+	
+	#ifdef _WIN32
 	u_long toggleLong = toggle;
 	checkReturn(ioctlsocket(mSock, FIONBIO, &toggleLong));
+	#else
+	int flags = fcntl(mSock, F_GETFL, 0);
+	checkReturn(flags);
+	flags = toggle ? flags & ~O_NONBLOCK : flags | O_NONBLOCK;
+	checkReturn(fcntl(mSock, F_SETFL, flags));
+	#endif
 }
 
 Socket Socket::accept()
@@ -238,7 +255,7 @@ void SocketPoller::poll(int timeout, std::function<void(decltype(mSockets)::valu
 	#ifdef _WIN32
 	int result = WSAPoll(mPollFdList.data(), static_cast<ULONG>(mPollFdList.size()), timeout);
 	#elif defined (__linux__)
-	int result = poll(mPollFdList.data(), mPollFdList.size(), timeout);
+	int result = ::poll(mPollFdList.data(), mPollFdList.size(), timeout);
 	#endif
 
 	if (!mSockets.empty() && !mPollFdList.empty())

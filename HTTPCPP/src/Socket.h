@@ -1,12 +1,14 @@
 #ifndef __SOCKET__
 #define __SOCKET__
 #include <cstdint>
-#include <string_view>
 #include <vector>
 #include <memory>
 #include <functional>
-#include <tuple>
 #include "Common.h"
+
+#ifdef __linux__
+#include <poll.h>
+#endif
 
 class Socket
 {
