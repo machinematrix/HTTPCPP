@@ -2,8 +2,6 @@
 #include <stdexcept>
 #include <algorithm>
 
-#include <iostream>
-
 #ifdef _WIN32
 #pragma comment(lib, "Secur32.lib")
 #endif
@@ -61,9 +59,8 @@ Socket::Socket(DescriptorType sock)
 
 		domain = name.sa_family;
 	}
-	catch (const std::runtime_error &e)
+	catch (const std::runtime_error&)
 	{
-		std::cout << e.what() << std::endl;
 		close();
 		throw;
 	}

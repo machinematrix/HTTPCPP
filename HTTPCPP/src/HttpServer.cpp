@@ -10,10 +10,7 @@
 #include "HttpServer.h"
 #include "HttpRequest.h"
 #include "HttpResponse.h"
-#include "RequestScheduler.h"
 #include "Socket.h"
-
-#include <iostream>
 
 namespace
 {
@@ -115,8 +112,6 @@ void Http::Server::Impl::serverProcedure()
 
 void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFileDescriptor::revents) revents, ThreadPool &mPool, SocketPoller &poller, std::unordered_map<std::shared_ptr<Socket>, SocketInfo> &mSocketInfo, std::chrono::milliseconds mSocketTimeToLive)
 {
-	using std::cout;
-	using std::endl;
 	using std::chrono::steady_clock;
 
 	if (revents & POLLIN)
@@ -126,15 +121,15 @@ void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFile
 			std::shared_ptr<Socket> clientSocket(new Socket(socket->accept()));
 
 			#ifndef NDEBUG
-			cout << __func__ << ' ' << "accept() returned socket " << clientSocket << endl;
+			mEndpointLogger(std::string(__func__) + ' ' + "accept() returned new socket ");
 			#endif
 			poller.addSocket(clientSocket, POLLIN);
 
 			if (!mSocketInfo.emplace(clientSocket, steady_clock::now()).second)
 			{
-				#ifndef NDEBUG
-				std::cout << __func__ << ' ' << "SOCKET RETURNED FROM accept() (" << clientSocket << ") ALREADY EXISTED ON THE MAP" << std::endl;
-				#endif
+				//#ifndef NDEBUG
+				//std::cout << __func__ << ' ' << "SOCKET RETURNED FROM accept() (" << clientSocket << ") ALREADY EXISTED ON THE MAP" << std::endl;
+				//#endif
 			}
 		}
 		else
@@ -143,9 +138,9 @@ void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFile
 
 			if (!it->second.mIsBeingServed.load())
 			{
-				#ifndef NDEBUG
-				cout << __func__ << ' ' << "Serving request with socket: " << socket << endl;
-				#endif
+				//#ifndef NDEBUG
+				//cout << __func__ << ' ' << "Serving request with socket: " << socket << endl;
+				//#endif
 
 				it->second.mIsBeingServed.store(true);
 				mPool.addTask(std::bind(&Impl::dispatch, this, it));
@@ -156,9 +151,9 @@ void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFile
 			 revents & POLLNVAL &&
 			 !mSocketInfo.find(socket)->second.mIsBeingServed.load())
 	{ //if I closed the socket after handling the request, stop monitoring it
-		#ifndef NDEBUG
-		cout << __func__ << ' ' << "Socket " << socket << " was closed by me" << endl;
-		#endif
+		//#ifndef NDEBUG
+		//cout << __func__ << ' ' << "Socket " << socket << " was closed by me" << endl;
+		//#endif
 
 		mSocketInfo.erase(mSocketInfo.find(socket));
 		poller.removeSocket(*socket);
@@ -168,9 +163,9 @@ void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFile
 			 !mSocketInfo.find(socket)->second.mIsBeingServed.load() &&
 			 (revents & POLLHUP || steady_clock::now() - mSocketInfo.find(socket)->second.mLastServedTimePoint > mSocketTimeToLive))
 	{ //if the other side disconnected or if the sockets TTL has expired, close the socket.
-		#ifndef NDEBUG
-		cout << __func__ << ' ' << "Socket " << socket << " expired or got hung up, closing it..." << endl;
-		#endif
+		//#ifndef NDEBUG
+		//cout << __func__ << ' ' << "Socket " << socket << " expired or got hung up, closing it..." << endl;
+		//#endif
 
 		mSocketInfo.erase(mSocketInfo.find(socket));
 		poller.removeSocket(*socket);
