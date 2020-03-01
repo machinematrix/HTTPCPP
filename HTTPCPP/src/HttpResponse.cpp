@@ -208,7 +208,7 @@ void Http::Response::Impl::send()
 
 	constexpr const char *fieldEnd = "\r\n";
 
-	decltype(MySend(DescriptorType(), nullptr, 0, 0)) bytesSent = 0;
+	std::int64_t bytesSent = 0;
 
 	std::string response = "HTTP/" + mVersion + ' ' + std::to_string(mStatusCode) + fieldEnd;
 
