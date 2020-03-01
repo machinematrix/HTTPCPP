@@ -1,21 +1,5 @@
 #ifndef __NAMES__
 #define __NAMES__
-
-#ifdef __linux__
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <errno.h>
-#define SOCKET_ERROR (-1)
-#define INVALID_SOCKET (-1)
-using DescriptorType = int;
-#elif defined(_WIN32)
-#include <Ws2tcpip.h>
-#include <winsock2.h>
-using ssize_t = SSIZE_T;
-using DescriptorType = SOCKET;
-#endif
 #include <algorithm>
 #include <string>
 

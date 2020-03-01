@@ -6,23 +6,21 @@
 #include <string>
 #include <algorithm>
 #include <memory>
-#include "Common.h"
 #include "HttpServer.h"
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "ThreadPool.h"
 #include "Socket.h"
 
+#ifdef _WIN32
+#elif defined(__linux__)
+#include <sys/socket.h>
+#endif
+
 namespace
 {
 	void placeholderLogger(const std::string_view&)
 	{}
-
-	#ifdef _WIN32
-	using PollFileDescriptor = WSAPOLLFD;
-	#elif defined(__linux__)
-	using PollFileDescriptor = pollfd;
-	#endif
 
 	struct SocketInfo
 	{

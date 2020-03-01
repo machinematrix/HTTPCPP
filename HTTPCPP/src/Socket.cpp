@@ -1,13 +1,22 @@
 #include "Socket.h"
 #include <stdexcept>
 #include <algorithm>
+#include <string>
 
 #ifdef _WIN32
 #pragma comment(lib, "Secur32.lib")
+#include <Ws2tcpip.h>
 #elif defined __linux__
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <errno.h>
 #include <poll.h>
 #include <cstring>
 #include <fcntl.h>
+#define SOCKET_ERROR (-1)
+#define INVALID_SOCKET (-1)
 #endif
 
 namespace

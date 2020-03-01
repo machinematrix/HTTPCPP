@@ -4,10 +4,15 @@
 #include <vector>
 #include <memory>
 #include <functional>
-#include "Common.h"
 
-#ifdef __linux__
+#ifdef _WIN32
+#include <winsock2.h>
+using PollFileDescriptor = WSAPOLLFD;
+using DescriptorType = SOCKET;
+#elif defined __linux__
 #include <poll.h>
+using PollFileDescriptor = pollfd;
+using DescriptorType = int;
 #endif
 
 class WinsockLoader;
@@ -45,11 +50,6 @@ bool operator<(const Socket&, const Socket&) noexcept;
 
 class SocketPoller
 {
-	#ifdef _WIN32
-	using PollFileDescriptor = WSAPOLLFD;
-	#elif defined(__linux__)
-	using PollFileDescriptor = pollfd;
-	#endif
 	std::vector<std::shared_ptr<Socket>> mSockets;
 	std::vector<PollFileDescriptor> mPollFdList;
 public:

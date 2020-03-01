@@ -14,35 +14,12 @@
 #undef max
 
 #ifdef __linux__
+#include <sys/socket.h>
+#include <unistd.h>
 inline void Sleep(size_t miliseconds)
 {
 	usleep(miliseconds * 1000);
 }
-#endif
-
-#ifdef _WIN32
-//sets socket to non blocking mode on construction
-class NonBlockSocket
-{
-	DescriptorType mSocket;
-	u_long toggle;
-public:
-	NonBlockSocket(DescriptorType sock)
-		:mSocket(sock)
-		,toggle(1)
-	{
-		ioctlsocket(mSocket, FIONBIO, &toggle);
-	}
-
-	~NonBlockSocket()
-	{
-		toggle = 0;
-		ioctlsocket(mSocket, FIONBIO, &toggle);
-	}
-
-	NonBlockSocket(const NonBlockSocket&&) = delete;
-	NonBlockSocket& operator=(const NonBlockSocket&&) = delete;
-};
 #endif
 
 class Http::Request::Impl
@@ -255,7 +232,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 	{
 		auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
 
-		if (bytesRead != SOCKET_ERROR && bytesRead > 0)
+		if (bytesRead > 0)
 		{
 			requestText.append(buffer.data(), bytesRead);
 			headerEnd = requestText.rfind("\r\n\r\n");
@@ -318,7 +295,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 		{
 			auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
 
-			if (bytesRead != SOCKET_ERROR && bytesRead > 0)
+			if (bytesRead > 0)
 			{
 				mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
 				chances = initialChances;
