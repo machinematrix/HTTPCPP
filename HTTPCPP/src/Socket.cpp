@@ -1,6 +1,6 @@
 #include "Socket.h"
 #include <stdexcept>
-#include <memory>
+#include <algorithm>
 
 #ifdef _WIN32
 #pragma comment(lib, "Secur32.lib")
@@ -115,6 +115,8 @@ Socket& Socket::operator=(Socket &&other) noexcept
 	domain = other.domain;
 	type = other.type;
 	protocol = other.protocol;
+
+	return *this;
 }
 
 void Socket::close()
@@ -184,4 +186,63 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 	checkReturn(static_cast<int>(result));
 
 	return result;
+}
+
+bool operator!=(const Socket &lhs, const Socket &rhs) noexcept
+{
+	return lhs.mSock != rhs.mSock;
+}
+
+bool operator==(const Socket &lhs, const Socket &rhs) noexcept
+{
+	return !(lhs != rhs);
+}
+
+bool operator<(const Socket &lhs, const Socket &rhs) noexcept
+{
+	return lhs.mSock < rhs.mSock;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+SocketPoller::SocketPoller(SocketPoller&&) noexcept = default;
+
+SocketPoller& SocketPoller::operator=(SocketPoller&&) noexcept = default;
+
+void SocketPoller::addSocket(decltype(mSockets)::value_type socket, decltype(PollFileDescriptor::events) events)
+{
+	mSockets.emplace_back(socket);
+	mPollFdList.push_back({ socket->mSock, events });
+}
+
+void SocketPoller::removeSocket(const decltype(mSockets)::value_type::element_type &socket)
+{
+	auto descriptor = socket.mSock;
+	auto socketIt = std::find_if(mSockets.begin(), mSockets.end(), [&socket](const decltype(mSockets)::value_type &ptr) -> bool { return *ptr == socket; });
+	auto entryIt = std::find_if(mPollFdList.begin(), mPollFdList.end(), [descriptor](const PollFileDescriptor &pollEntry) -> bool { return descriptor == pollEntry.fd; });
+
+	if (socketIt != mSockets.end() && entryIt != mPollFdList.end())
+	{
+		mSockets.erase(socketIt);
+		mPollFdList.erase(entryIt);
+	}
+	else
+		throw std::out_of_range("Socket not found");
+}
+
+void SocketPoller::poll(int timeout, std::function<void(decltype(mSockets)::value_type, decltype(PollFileDescriptor::revents))> callback)
+{
+	#ifdef _WIN32
+	int result = WSAPoll(mPollFdList.data(), static_cast<ULONG>(mPollFdList.size()), timeout);
+	#elif defined (__linux__)
+	int result = poll(mPollFdList.data(), mPollFdList.size(), timeout);
+	#endif
+
+	if (!mSockets.empty() && !mPollFdList.empty())
+		for (std::int64_t i = static_cast<std::int64_t>(mPollFdList.size() - 1); i >= 0; --i)
+			if (mPollFdList[i].revents)
+				callback(mSockets[i], mPollFdList[i].revents);
 }

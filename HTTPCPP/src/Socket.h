@@ -2,10 +2,17 @@
 #define __SOCKET__
 #include <cstdint>
 #include <string_view>
+#include <vector>
+#include <memory>
+#include <functional>
+#include <tuple>
 #include "Common.h"
 
 class Socket
 {
+	friend class SocketPoller;
+	friend bool operator!=(const Socket&, const Socket&) noexcept;
+	friend bool operator<(const Socket&, const Socket&) noexcept;
 	WinsockLoader loader;
 	DescriptorType mSock;
 	int domain, type, protocol;
@@ -26,6 +33,32 @@ public:
 	Socket accept();
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags);
 	std::int64_t send(void *buffer, size_t bufferSize, int flags);
+};
+
+bool operator!=(const Socket&, const Socket&) noexcept;
+bool operator==(const Socket&, const Socket&) noexcept;
+bool operator<(const Socket&, const Socket&) noexcept;
+
+class SocketPoller
+{
+	#ifdef _WIN32
+	using PollFileDescriptor = WSAPOLLFD;
+	#elif defined(__linux__)
+	using PollFileDescriptor = pollfd;
+	#endif
+	std::vector<std::shared_ptr<Socket>> mSockets;
+	std::vector<PollFileDescriptor> mPollFdList;
+public:
+	SocketPoller() = default;
+	SocketPoller(const SocketPoller&) = delete;
+	SocketPoller(SocketPoller&&) noexcept;
+
+	SocketPoller& operator=(const SocketPoller&) = delete;
+	SocketPoller& operator=(SocketPoller&&) noexcept;
+
+	void addSocket(decltype(mSockets)::value_type socket, decltype(PollFileDescriptor::events) events);
+	void removeSocket(const decltype(mSockets)::value_type::element_type &socket);
+	void poll(int timeout, std::function<void(decltype(mSockets)::value_type, decltype(PollFileDescriptor::revents))> callback);
 };
 
 #endif
