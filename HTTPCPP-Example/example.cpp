@@ -141,8 +141,8 @@ int main()
 		sv.setResourceCallback("/favicon.ico", favicon);
 		sv.setResourceCallback("/image", image);
 		sv.setResourceCallback("/video", video); //Only works with Chrome and Firefox for some reason
-		//sv.setEndpointLogger(logger);
-		//sv.setErrorLogger(logger);
+		sv.setEndpointLogger(logger);
+		sv.setErrorLogger(errorLogger);
 		sv.start();
 
 		do
