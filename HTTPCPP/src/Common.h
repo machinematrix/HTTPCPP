@@ -28,12 +28,4 @@ inline bool CaseInsensitiveComparator(const std::string &lhs, const std::string 
 										[](char lhs, char rhs) -> bool { return std::toupper(lhs) < std::toupper(rhs); });
 }
 
-namespace Http
-{
-	struct SocketWrapper
-	{
-		DescriptorType mSock;
-	};
-}
-
 #endif
