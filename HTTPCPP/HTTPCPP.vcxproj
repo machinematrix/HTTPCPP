@@ -39,18 +39,18 @@
     <ClInclude Include="include\HttpRequest.h" />
     <ClInclude Include="include\HttpResponse.h" />
     <ClInclude Include="include\HttpServer.h" />
+    <ClInclude Include="src\RequestScheduler.h" />
     <ClInclude Include="src\Socket.h" />
     <ClInclude Include="src\Common.h" />
-    <ClInclude Include="src\RequestScheduler.h" />
     <ClInclude Include="src\ThreadPool.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\RequestScheduler.cpp" />
     <ClCompile Include="src\Socket.cpp" />
     <ClCompile Include="src\Common.cpp" />
     <ClCompile Include="src\HttpRequest.cpp" />
     <ClCompile Include="src\HttpResponse.cpp" />
     <ClCompile Include="src\HttpServer.cpp" />
-    <ClCompile Include="src\RequestScheduler.cpp" />
     <ClCompile Include="src\ThreadPool.cpp" />
   </ItemGroup>
   <ItemGroup>
