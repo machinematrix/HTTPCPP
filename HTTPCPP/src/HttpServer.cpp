@@ -72,7 +72,7 @@ class Http::Server::Impl
 	std::atomic<ServerStatus> mStatus; //1 byte
 
 	void serverProcedure();
-	void serve(std::shared_ptr<Socket>, decltype(PollFileDescriptor::revents), ThreadPool&, SocketPoller&, std::unordered_map<std::shared_ptr<Socket>, SocketInfo>, std::chrono::milliseconds);
+	void serve(std::shared_ptr<Socket>, decltype(PollFileDescriptor::revents), ThreadPool&, SocketPoller&, std::unordered_map<std::shared_ptr<Socket>, SocketInfo>&, std::chrono::milliseconds);
 	void dispatch(std::unordered_map<std::shared_ptr<Socket>, SocketInfo>::iterator);
 	void handleRequest(std::shared_ptr<Socket>) const;
 public:
@@ -102,7 +102,7 @@ void Http::Server::Impl::serverProcedure()
 	std::unordered_map<std::shared_ptr<Socket>, SocketInfo> mSocketInfo;
 	SocketPoller poller;
 	ThreadPool pool(std::thread::hardware_concurrency());
-	std::chrono::milliseconds socketTTL;
+	std::chrono::milliseconds socketTTL(5000);
 
 	poller.addSocket(mSock, POLLIN);
 
@@ -113,7 +113,7 @@ void Http::Server::Impl::serverProcedure()
 	}
 }
 
-void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFileDescriptor::revents) revents, ThreadPool &mPool, SocketPoller &poller, std::unordered_map<std::shared_ptr<Socket>, SocketInfo> mSocketInfo, std::chrono::milliseconds mSocketTimeToLive)
+void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFileDescriptor::revents) revents, ThreadPool &mPool, SocketPoller &poller, std::unordered_map<std::shared_ptr<Socket>, SocketInfo> &mSocketInfo, std::chrono::milliseconds mSocketTimeToLive)
 {
 	using std::cout;
 	using std::endl;
