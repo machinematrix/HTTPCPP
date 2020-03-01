@@ -10,6 +10,7 @@
 #include "HttpServer.h"
 #include "HttpRequest.h"
 #include "HttpResponse.h"
+#include "ThreadPool.h"
 #include "Socket.h"
 
 namespace
