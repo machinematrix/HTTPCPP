@@ -9,7 +9,7 @@
 #include "Socket.h"
 
 #ifdef __linux__
-#include <string.h>
+#include <cstring>
 #endif
 
 class Http::Response::Impl
@@ -238,7 +238,7 @@ void Http::Response::Impl::send()
 			LocalFree(message);
 			throw ResponseException(strMsg);
 			#elif defined(__linux__)
-			throw ResponseException(strerror(errno));
+			throw ResponseException(std::strerror(errno));
 			#endif
 		}
 	}
