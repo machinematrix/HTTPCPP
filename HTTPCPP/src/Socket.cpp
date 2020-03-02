@@ -4,7 +4,6 @@
 #include <string>
 
 #ifdef _WIN32
-#pragma comment(lib, "Secur32.lib")
 #include <Ws2tcpip.h>
 #elif defined __linux__
 #include <sys/socket.h>
