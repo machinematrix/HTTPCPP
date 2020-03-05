@@ -8,11 +8,11 @@ all: Http.a libHttp.so
 
 
 
-Http.a: HttpServer.o HttpRequest.o HttpResponse.o ThreadPool.o Socket.o
-	ar rcs $@ $^
+Http.a: HttpServer.o HttpRequest.o HttpResponse.o
+	ar rcs $@ $^ ThreadPool.o Socket.o
 
-libHttp.so: HttpServer.o HttpRequest.o HttpResponse.o ThreadPool.o Socket.o
-	g++ $(INC) $(STD) $(MACROS) -shared -fvisibility=hidden -o $@ $^ -pthread
+libHttp.so: HttpServer.o HttpRequest.o HttpResponse.o
+	g++ $(INC) $(STD) $(MACROS) -shared -fvisibility=hidden -o $@ $^ ThreadPool.o Socket.o -pthread
 
 
 
