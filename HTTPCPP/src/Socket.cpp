@@ -4,7 +4,9 @@
 #include <string>
 
 #ifdef _WIN32
+#define SECURITY_WIN32
 #include <Ws2tcpip.h>
+#include <security.h>
 #elif defined __linux__
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -49,6 +51,12 @@ namespace
 	#ifdef _WIN32
 	using BufferType = char*;
 	using LengthType = int;
+
+	inline void checkSchannelReturn(SECURITY_STATUS ret)
+	{
+		if (ret != SEC_E_OK)
+			throw std::runtime_error(formatMessage(WSAGetLastError()));
+	}
 	#elif defined(__linux__)
 	using BufferType = void*;
 	using LengthType = size_t;
@@ -222,12 +230,12 @@ void Socket::toggleBlocking(bool toggle)
 	#endif
 }
 
-Socket Socket::accept()
+Socket* Socket::accept()
 {
 	DescriptorType clientSocket = ::accept(mSock, nullptr, nullptr);
 
 	if (clientSocket != SOCKET_ERROR)
-		return clientSocket;
+		return new Socket(clientSocket);
 	else
 		#ifdef _WIN32
 		throw std::runtime_error(formatMessage(WSAGetLastError()));
@@ -253,6 +261,43 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 
 	return result;
 }
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+TLSSocket::TLSSocket(DescriptorType sock)
+	:Socket(sock)
+{
+	#ifdef _WIN32
+	PSecPkgInfoA packageInfo;
+	decltype(packageInfo->cbMaxToken) maxMessage;
+	
+	checkSchannelReturn(QuerySecurityPackageInfoA(const_cast<char*>("Negotiate"), &packageInfo));
+	maxMessage = packageInfo->cbMaxToken;
+	FreeContextBuffer(packageInfo);
+	#endif
+}
+
+TLSSocket* TLSSocket::accept()
+{
+	DescriptorType clientSocket = ::accept(mSock, nullptr, nullptr);
+
+	if (clientSocket != SOCKET_ERROR)
+		return new TLSSocket(clientSocket);
+	else
+		#ifdef _WIN32
+		throw std::runtime_error(formatMessage(WSAGetLastError()));
+	#elif defined (__linux__)
+		throw std::runtime_error(formatMessage(errno));
+	#endif
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 bool operator!=(const Socket &lhs, const Socket &rhs) noexcept
 {
