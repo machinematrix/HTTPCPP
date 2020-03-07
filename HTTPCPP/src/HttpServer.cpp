@@ -261,7 +261,7 @@ Http::Server::Impl::Impl(std::uint16_t port, int connectionQueueLength)
 	,mEndpointLogger(placeholderLogger)
 	,mQueueLength(connectionQueueLength)
 {
-	mSock->bind("localhost", mPort, false);
+	mSock->bind("0.0.0.0", mPort, true);
 }
 
 void Http::Server::Impl::start()
