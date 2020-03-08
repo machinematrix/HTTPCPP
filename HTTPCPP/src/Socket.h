@@ -4,9 +4,12 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <stdexcept>
 
 #ifdef _WIN32
+#define SECURITY_WIN32
 #include <winsock2.h>
+#include <security.h>
 using PollFileDescriptor = WSAPOLLFD;
 using DescriptorType = SOCKET;
 #elif defined __linux__
@@ -16,6 +19,14 @@ using DescriptorType = int;
 #endif
 
 class WinsockLoader;
+
+class SocketException : public std::runtime_error
+{
+	int errorCode;
+public:
+	SocketException(int code);
+	int getErrorCode() const;
+};
 
 class Socket
 {
@@ -28,6 +39,7 @@ protected:
 private:
 	int domain, type, protocol;
 public:
+	//Must be used with sockets returned from accept
 	Socket(DescriptorType);
 	Socket(int domain, int type, int protocol);
 	Socket(const Socket&) = delete;
@@ -42,20 +54,26 @@ public:
 	void listen(int queueLength);
 	void toggleBlocking(bool toggle);
 	virtual Socket* accept();
-	std::int64_t receive(void *buffer, size_t bufferSize, int flags);
-	std::int64_t send(void *buffer, size_t bufferSize, int flags);
+	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
+	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
 };
 
 class TLSSocket : public Socket
 {
-public:
-	//using Socket::Socket;
-	TLSSocket(DescriptorType);
-	TLSSocket(TLSSocket&&) noexcept = default;
+	CredHandle hCredentials = {};
+	SecHandle hContext = {};
+	bool contextSetup = false;
 
-	TLSSocket& operator=(TLSSocket&&) noexcept = default;
+	void setupContext();
+public:
+	using Socket::Socket;
+	TLSSocket(TLSSocket&&) noexcept;
+	~TLSSocket();
+
+	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
+	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
 };
 
 bool operator!=(const Socket&, const Socket&) noexcept;

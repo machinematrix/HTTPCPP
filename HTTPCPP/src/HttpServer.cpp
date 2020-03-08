@@ -260,7 +260,7 @@ void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) con
 
 Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength)
 	:mSock(new Socket(AF_INET, SOCK_STREAM, 0))
-	,mSockSecure(new Socket(AF_INET, SOCK_STREAM, 0))
+	,mSockSecure(new TLSSocket(AF_INET, SOCK_STREAM, 0))
 	,mPort(port)
 	,mPortSecure(portSecure)
 	,mStatus(ServerStatus::UNINITIALIZED)

@@ -1,12 +1,10 @@
 #include "Socket.h"
-#include <stdexcept>
 #include <algorithm>
 #include <string>
 
 #ifdef _WIN32
-#define SECURITY_WIN32
+//#define SECURITY_WIN32
 #include <Ws2tcpip.h>
-#include <security.h>
 #elif defined __linux__
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -22,13 +20,13 @@
 
 namespace
 {
-	std::string formatMessage(int msg)
+	std::string formatMessage(int code)
 	{
 		std::string result;
 
 		#ifdef _WIN32
 		LPSTR message;
-		FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, static_cast<DWORD>(msg), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
+		FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, static_cast<DWORD>(code), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
 		result = message;
 		LocalFree(message);
 		#elif defined(__linux__)
@@ -42,9 +40,9 @@ namespace
 	{
 		if (ret == SOCKET_ERROR)
 			#ifdef _WIN32
-			throw std::runtime_error(formatMessage(WSAGetLastError()));
+			throw SocketException(WSAGetLastError());
 			#elif defined (__linux__)
-			throw std::runtime_error(formatMessage(errno));
+			throw SocketException(errno);
 			#endif
 	}
 
@@ -55,7 +53,7 @@ namespace
 	inline void checkSchannelReturn(SECURITY_STATUS ret)
 	{
 		if (ret != SEC_E_OK)
-			throw std::runtime_error(formatMessage(WSAGetLastError()));
+			throw SocketException(ret);
 	}
 	#elif defined(__linux__)
 	using BufferType = void*;
@@ -71,7 +69,7 @@ class WinsockLoader
 		#ifdef _WIN32
 		WSADATA wsaData;
 		if (auto ret = WSAStartup(MAKEWORD(2, 2), &wsaData))
-			throw std::runtime_error(formatMessage(ret));
+			throw SocketException(ret);
 		#endif
 	}
 public:
@@ -102,6 +100,16 @@ public:
 	WinsockLoader& operator=(WinsockLoader&&) noexcept = default;
 };
 
+SocketException::SocketException(int code)
+	:std::runtime_error(formatMessage(code)),
+	errorCode(code)
+{}
+
+int SocketException::getErrorCode() const
+{
+	return errorCode;
+}
+
 Socket::Socket(DescriptorType sock)
 	:loader(new WinsockLoader),
 	mSock(sock),
@@ -114,8 +122,8 @@ Socket::Socket(DescriptorType sock)
 	#elif defined __linux__
 	using StructLength = socklen_t;
 	#endif
-	sockaddr name;
-	StructLength nameLen = sizeof(name), typeLen = sizeof(type);
+	sockaddr name = {};
+	StructLength nameLen = sizeof(name), typeLen = sizeof(socklen_t);
 
 	try
 	{
@@ -124,7 +132,7 @@ Socket::Socket(DescriptorType sock)
 
 		domain = name.sa_family;
 	}
-	catch (const std::runtime_error&)
+	catch (const SocketException&)
 	{
 		close();
 		throw;
@@ -140,9 +148,9 @@ Socket::Socket(int domain, int type, int protocol)
 {
 	if (mSock == INVALID_SOCKET)
 		#ifdef _WIN32
-		throw std::runtime_error(formatMessage(WSAGetLastError()));
+		throw SocketException(WSAGetLastError());
 		#elif defined (__linux__)
-		throw std::runtime_error(formatMessage(errno));
+		throw SocketException(errno);
 		#endif
 
 	try
@@ -151,7 +159,7 @@ Socket::Socket(int domain, int type, int protocol)
 
 		checkReturn(setsockopt(mSock, SOL_SOCKET, SO_REUSEADDR, optval, sizeof(optval)));
 	}
-	catch (const std::runtime_error&)
+	catch (const SocketException&)
 	{
 		close();
 		throw;
@@ -218,9 +226,8 @@ void Socket::listen(int queueLength)
 
 void Socket::toggleBlocking(bool toggle)
 {
-	
 	#ifdef _WIN32
-	u_long toggleLong = toggle;
+	u_long toggleLong = !toggle;
 	checkReturn(ioctlsocket(mSock, FIONBIO, &toggleLong));
 	#else
 	int flags = fcntl(mSock, F_GETFL, 0);
@@ -238,9 +245,9 @@ Socket* Socket::accept()
 		return new Socket(clientSocket);
 	else
 		#ifdef _WIN32
-		throw std::runtime_error(formatMessage(WSAGetLastError()));
+		throw SocketException(WSAGetLastError());
 		#elif defined (__linux__)
-		throw std::runtime_error(formatMessage(errno));
+		throw SocketException(errno);
 		#endif
 }
 
@@ -267,17 +274,122 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-TLSSocket::TLSSocket(DescriptorType sock)
-	:Socket(sock)
+void TLSSocket::setupContext()
 {
 	#ifdef _WIN32
+	constexpr const char *packageName = "Negotiate";
+	std::unique_ptr<char[]> buffer, outputBuffer;
+	std::int64_t bytesRead = 0, bytesSent = 0;
+
 	PSecPkgInfoA packageInfo;
+	TimeStamp lifetime;
+	SecBuffer OutSecBuff;
+	SecBufferDesc OutBuffDesc = { 0, 1, &OutSecBuff };
+	SecBuffer InSecBuff;
+	SecBufferDesc InBuffDesc = { 0, 1, &InSecBuff };
+	ULONG Attribs = 0;
 	decltype(packageInfo->cbMaxToken) maxMessage;
-	
-	checkSchannelReturn(QuerySecurityPackageInfoA(const_cast<char*>("Negotiate"), &packageInfo));
+	BOOL done = FALSE, newConversation = TRUE;
+	SECURITY_STATUS result;
+	SecPkgContext_Sizes SecPkgContextSizes;
+	//SecPkgContext_NegotiationInfo SecPkgNegInfo;
+	ULONG cbMaxSignature;
+	ULONG cbSecurityTrailer;
+
+	checkSchannelReturn(QuerySecurityPackageInfoA(const_cast<char*>(packageName), &packageInfo));
 	maxMessage = packageInfo->cbMaxToken;
 	FreeContextBuffer(packageInfo);
+
+	buffer.reset(new char[maxMessage]);
+	outputBuffer.reset(new char[maxMessage]);
+
+	//AcceptAuthSocket
+	InSecBuff.cbBuffer = OutSecBuff.cbBuffer = maxMessage;
+	InSecBuff.BufferType = OutSecBuff.BufferType = SECBUFFER_TOKEN;
+	InSecBuff.pvBuffer = buffer.get();
+	OutSecBuff.pvBuffer = outputBuffer.get();
+
+	checkSchannelReturn(AcquireCredentialsHandle(NULL, const_cast<char*>(packageName), SECPKG_CRED_INBOUND, NULL, NULL, NULL, NULL, &hCredentials, &lifetime));
+
+	do
+	{
+		try {
+			toggleBlocking(false);
+			while ((bytesRead += Socket::receive(buffer.get(), maxMessage - bytesRead, 0)) < maxMessage);
+			//Socket::receive(buffer.get(), maxMessage - bytesRead, 0);
+			bytesRead = 0;
+			toggleBlocking(true);
+		}
+		catch (const SocketException &e) {
+			toggleBlocking(true);
+			#ifdef _WIN32
+			if (e.getErrorCode() != WSAEWOULDBLOCK)
+			#elif defined(__linux__)
+			if (e.getErrorCode() != EWOULDBLOCK)
+			#endif
+				throw;
+		}
+
+		checkSchannelReturn(result = AcceptSecurityContext(&hCredentials, newConversation ? nullptr : &hContext, &InBuffDesc, Attribs, SECURITY_NATIVE_DREP, &hContext, &OutBuffDesc, &Attribs, &lifetime));
+		if ((SEC_I_COMPLETE_NEEDED == result) || (SEC_I_COMPLETE_AND_CONTINUE == result))
+			checkSchannelReturn(CompleteAuthToken(&hContext, &OutBuffDesc));
+
+		try {
+			toggleBlocking(false);
+			while ((bytesSent += Socket::receive(outputBuffer.get(), maxMessage - bytesSent, 0)) < maxMessage);
+			bytesSent = 0;
+			toggleBlocking(true);
+		}
+		catch (const SocketException &e) {
+			toggleBlocking(true);
+			#ifdef _WIN32
+			if (e.getErrorCode() != WSAEWOULDBLOCK)
+				#elif defined(__linux__)
+			if (e.getErrorCode() != EWOULDBLOCK)
+				#endif
+				throw;
+		}
+
+		newConversation = FALSE;
+	} while (!((result == SEC_I_CONTINUE_NEEDED) || (result == SEC_I_COMPLETE_AND_CONTINUE)));
+	//AcceptAuthSocket
+
+	checkSchannelReturn(QueryContextAttributes(&hContext, SECPKG_ATTR_SIZES, &SecPkgContextSizes));
+
+	cbMaxSignature = SecPkgContextSizes.cbMaxSignature;
+	cbSecurityTrailer = SecPkgContextSizes.cbSecurityTrailer;
+
+	//checkSchannelReturn(QueryContextAttributes(&hContext, SECPKG_ATTR_NEGOTIATION_INFO, &SecPkgNegInfo));
+	//FreeContextBuffer(SecPkgNegInfo.PackageInfo);
+	//checkSchannelReturn(ImpersonateSecurityContext(&hContext));
+	contextSetup = true;
 	#endif
+}
+
+TLSSocket::TLSSocket(TLSSocket &&other) noexcept
+	:Socket(std::move(other)),
+	hCredentials(other.hCredentials),
+	hContext(other.hContext)
+{
+	other.hCredentials = CredHandle{};
+	other.hContext = SecHandle{};
+}
+
+TLSSocket::~TLSSocket()
+{
+	DeleteSecurityContext(&hContext);
+	FreeCredentialHandle(&hCredentials);
+}
+
+TLSSocket& TLSSocket::operator=(TLSSocket &&other) noexcept
+{
+	*static_cast<Socket*>(this) = std::move(other);
+	hCredentials = other.hCredentials;
+	other.hCredentials = CredHandle{};
+	hContext = other.hContext;
+	other.hContext = SecHandle{};
+
+	return *this;
 }
 
 TLSSocket* TLSSocket::accept()
@@ -288,10 +400,20 @@ TLSSocket* TLSSocket::accept()
 		return new TLSSocket(clientSocket);
 	else
 		#ifdef _WIN32
-		throw std::runtime_error(formatMessage(WSAGetLastError()));
+		throw SocketException(WSAGetLastError());
 	#elif defined (__linux__)
-		throw std::runtime_error(formatMessage(errno));
+		throw SocketException(errno);
 	#endif
+}
+
+std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
+{
+	auto result = Socket::receive(buffer, bufferSize, flags);
+	#ifdef _WIN32
+	if (!contextSetup)
+		setupContext();
+	#endif
+	return result;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
