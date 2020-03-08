@@ -213,7 +213,7 @@ void Socket::toggleBlocking(bool toggle)
 {
 	
 	#ifdef _WIN32
-	u_long toggleLong = toggle;
+	u_long toggleLong = !toggle;
 	checkReturn(ioctlsocket(mSock, FIONBIO, &toggleLong));
 	#else
 	int flags = fcntl(mSock, F_GETFL, 0);
