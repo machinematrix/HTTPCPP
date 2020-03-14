@@ -52,7 +52,8 @@ namespace
 
 	inline void checkSchannelReturn(SECURITY_STATUS ret)
 	{
-		if (ret != SEC_E_OK)
+		//if (ret != SEC_E_OK)
+		if (ret < 0)
 			throw SocketException(ret);
 	}
 	#elif defined(__linux__)
@@ -289,7 +290,7 @@ void TLSSocket::setupContext()
 	SecBufferDesc InBuffDesc = { 0, 1, &InSecBuff };
 	ULONG Attribs = 0;
 	decltype(packageInfo->cbMaxToken) maxMessage;
-	BOOL done = FALSE, newConversation = TRUE;
+	BOOL newConversation = TRUE;
 	SECURITY_STATUS result;
 	SecPkgContext_Sizes SecPkgContextSizes;
 	//SecPkgContext_NegotiationInfo SecPkgNegInfo;
@@ -304,7 +305,7 @@ void TLSSocket::setupContext()
 	outputBuffer.reset(new char[maxMessage]);
 
 	//AcceptAuthSocket
-	InSecBuff.cbBuffer = OutSecBuff.cbBuffer = maxMessage;
+	/*InSecBuff.cbBuffer = */OutSecBuff.cbBuffer = maxMessage;
 	InSecBuff.BufferType = OutSecBuff.BufferType = SECBUFFER_TOKEN;
 	InSecBuff.pvBuffer = buffer.get();
 	OutSecBuff.pvBuffer = outputBuffer.get();
@@ -316,7 +317,7 @@ void TLSSocket::setupContext()
 		try {
 			toggleBlocking(false);
 			while ((bytesRead += Socket::receive(buffer.get(), maxMessage - bytesRead, 0)) < maxMessage);
-			//Socket::receive(buffer.get(), maxMessage - bytesRead, 0);
+			InSecBuff.cbBuffer = bytesRead;
 			bytesRead = 0;
 			toggleBlocking(true);
 		}
@@ -330,13 +331,13 @@ void TLSSocket::setupContext()
 				throw;
 		}
 
-		checkSchannelReturn(result = AcceptSecurityContext(&hCredentials, newConversation ? nullptr : &hContext, &InBuffDesc, Attribs, SECURITY_NATIVE_DREP, &hContext, &OutBuffDesc, &Attribs, &lifetime));
+		checkSchannelReturn(result = AcceptSecurityContext(&hCredentials, newConversation ? nullptr : &hContext, &InBuffDesc, ASC_REQ_STREAM, SECURITY_NATIVE_DREP, &hContext, &OutBuffDesc, &Attribs, &lifetime));
 		if ((SEC_I_COMPLETE_NEEDED == result) || (SEC_I_COMPLETE_AND_CONTINUE == result))
 			checkSchannelReturn(CompleteAuthToken(&hContext, &OutBuffDesc));
 
 		try {
 			toggleBlocking(false);
-			while ((bytesSent += Socket::receive(outputBuffer.get(), maxMessage - bytesSent, 0)) < maxMessage);
+			while ((bytesSent += Socket::send(outputBuffer.get(), maxMessage - bytesSent, 0)) < maxMessage);
 			bytesSent = 0;
 			toggleBlocking(true);
 		}
@@ -344,9 +345,9 @@ void TLSSocket::setupContext()
 			toggleBlocking(true);
 			#ifdef _WIN32
 			if (e.getErrorCode() != WSAEWOULDBLOCK)
-				#elif defined(__linux__)
+			#elif defined(__linux__)
 			if (e.getErrorCode() != EWOULDBLOCK)
-				#endif
+			#endif
 				throw;
 		}
 
