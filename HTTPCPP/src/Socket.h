@@ -37,7 +37,8 @@ class Socket
 protected:
 	DescriptorType mSock;
 private:
-	int domain, type, protocol;
+	int mDomain, mType, mProtocol;
+	bool mNonBlocking = false;
 public:
 	//Must be used with sockets returned from accept
 	Socket(DescriptorType);
@@ -52,7 +53,8 @@ public:
 	void close();
 	void bind(std::string_view address, short port, bool numericAddress);
 	void listen(int queueLength);
-	void toggleBlocking(bool toggle);
+	void toggleNonBlockingMode(bool toggle);
+	bool isNonBlocking();
 	virtual Socket* accept();
 	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
 	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
@@ -79,6 +81,15 @@ public:
 bool operator!=(const Socket&, const Socket&) noexcept;
 bool operator==(const Socket&, const Socket&) noexcept;
 bool operator<(const Socket&, const Socket&) noexcept;
+
+class NonBlockingSocket
+{
+	Socket &mSocket;
+	bool oldState;
+public:
+	NonBlockingSocket(Socket&);
+	~NonBlockingSocket();
+};
 
 class SocketPoller
 {

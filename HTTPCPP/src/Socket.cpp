@@ -5,6 +5,9 @@
 #ifdef _WIN32
 //#define SECURITY_WIN32
 #include <Ws2tcpip.h>
+#include <credssp.h>
+#include <type_traits>
+#include <Schnlsp.h>
 #elif defined __linux__
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -17,6 +20,9 @@
 #define SOCKET_ERROR (-1)
 #define INVALID_SOCKET (-1)
 #endif
+
+
+#include <iostream>
 
 namespace
 {
@@ -114,9 +120,9 @@ int SocketException::getErrorCode() const
 Socket::Socket(DescriptorType sock)
 	:loader(new WinsockLoader),
 	mSock(sock),
-	domain(0),
-	type(0),
-	protocol(0)
+	mDomain(0),
+	mType(0),
+	mProtocol(0)
 {
 	#ifdef	_WIN32
 	using StructLength = int;
@@ -129,9 +135,9 @@ Socket::Socket(DescriptorType sock)
 	try
 	{
 		checkReturn(getsockname(mSock, &name, &nameLen));
-		checkReturn(getsockopt(mSock, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&type), &typeLen));
+		checkReturn(getsockopt(mSock, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&mType), &typeLen));
 
-		domain = name.sa_family;
+		mDomain = name.sa_family;
 	}
 	catch (const SocketException&)
 	{
@@ -143,9 +149,9 @@ Socket::Socket(DescriptorType sock)
 Socket::Socket(int domain, int type, int protocol)
 	:loader(new WinsockLoader),
 	mSock(socket(domain, type, protocol)),
-	domain(domain),
-	type(type),
-	protocol(protocol)
+	mDomain(domain),
+	mType(type),
+	mProtocol(protocol)
 {
 	if (mSock == INVALID_SOCKET)
 		#ifdef _WIN32
@@ -170,9 +176,9 @@ Socket::Socket(int domain, int type, int protocol)
 Socket::Socket(Socket &&other) noexcept
 	:mSock(other.mSock),
 	loader(std::move(other.loader)),
-	domain(other.domain),
-	type(other.type),
-	protocol(other.protocol)
+	mDomain(other.mDomain),
+	mType(other.mType),
+	mProtocol(other.mProtocol)
 {
 	other.mSock = INVALID_SOCKET;
 }
@@ -187,9 +193,9 @@ Socket& Socket::operator=(Socket &&other) noexcept
 	mSock = other.mSock;
 	loader = std::move(other.loader);
 	other.mSock = INVALID_SOCKET;
-	domain = other.domain;
-	type = other.type;
-	protocol = other.protocol;
+	mDomain = other.mDomain;
+	mType = other.mType;
+	mProtocol = other.mProtocol;
 
 	return *this;
 }
@@ -209,9 +215,9 @@ void Socket::bind(std::string_view address, short port, bool numericAddress)
 
 	addrinfo *list = NULL, hint = { 0 };
 	hint.ai_flags = (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE);
-	hint.ai_family = domain; //IPv4
-	hint.ai_socktype = type;
-	hint.ai_protocol = protocol;
+	hint.ai_family = mDomain; //IPv4
+	hint.ai_socktype = mType;
+	hint.ai_protocol = mProtocol;
 	checkReturn(getaddrinfo(nullptr, std::to_string(port).c_str(), &hint, &list));
 	addressListPtr.reset(list);
 
@@ -225,16 +231,30 @@ void Socket::listen(int queueLength)
 	checkReturn(::listen(mSock, queueLength));
 }
 
-void Socket::toggleBlocking(bool toggle)
+void Socket::toggleNonBlockingMode(bool toggle)
 {
 	#ifdef _WIN32
-	u_long toggleLong = !toggle;
+	//if (toggle != mNonBlocking)
+	//{
+	u_long toggleLong = mNonBlocking = toggle;
 	checkReturn(ioctlsocket(mSock, FIONBIO, &toggleLong));
-	#else
+	//}
+	#elif defined (__linux__)
 	int flags = fcntl(mSock, F_GETFL, 0);
 	checkReturn(flags);
-	flags = toggle ? flags & ~O_NONBLOCK : flags | O_NONBLOCK;
+	flags = toggle ? flags | O_NONBLOCK : flags & ~O_NONBLOCK;
 	checkReturn(fcntl(mSock, F_SETFL, flags));
+	#endif
+}
+
+bool Socket::isNonBlocking()
+{
+	#ifdef _WIN32
+	return mNonBlocking;
+	#elif defined (__linux__)
+	int flags = fcntl(mSock, F_GETFL, 0);
+	checkReturn(flags);
+	return flags & O_NONBLOCK;
 	#endif
 }
 
@@ -277,82 +297,112 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 
 void TLSSocket::setupContext()
 {
+	//certmgr.msc - certificate store
 	#ifdef _WIN32
-	constexpr const char *packageName = "Negotiate";
-	std::unique_ptr<char[]> buffer, outputBuffer;
-	std::int64_t bytesRead = 0, bytesSent = 0;
+	/*unsigned long packageCount;
+	PSecPkgInfoA packages;
+	EnumerateSecurityPackagesA(&packageCount, &packages);
 
+	for (decltype(packageCount) i = 0; i < packageCount; ++i)
+		std::cout << packages[i].Name << std::endl;*/
+
+	constexpr const char *packageName = "Schannel"/*UNISP_NAME_A*/;
+	/*std::unique_ptr<char[]>*/std::string buffer, outputBuffer;
 	PSecPkgInfoA packageInfo;
+	decltype(packageInfo->cbMaxToken) maxMessage;
 	TimeStamp lifetime;
 	SecBuffer OutSecBuff;
-	SecBufferDesc OutBuffDesc = { 0, 1, &OutSecBuff };
-	SecBuffer InSecBuff;
-	SecBufferDesc InBuffDesc = { 0, 1, &InSecBuff };
-	ULONG Attribs = 0;
-	decltype(packageInfo->cbMaxToken) maxMessage;
+	SecBufferDesc OutBuffDesc = { SECBUFFER_VERSION, 1, &OutSecBuff };
+	SecBuffer InSecBuff[2];
+	SecBufferDesc InBuffDesc = { SECBUFFER_VERSION, 2, InSecBuff };
+	ULONG Attribs = 0/*ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM*/ /*| ASC_REQ_ALLOCATE_MEMORY*/;
 	BOOL newConversation = TRUE;
 	SECURITY_STATUS result;
 	SecPkgContext_Sizes SecPkgContextSizes;
 	//SecPkgContext_NegotiationInfo SecPkgNegInfo;
 	ULONG cbMaxSignature;
 	ULONG cbSecurityTrailer;
+	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
+	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext)*> certificate(nullptr, CertFreeCertificateContext);
+	SCHANNEL_CRED schannelCredential = {};
+
+	certificateStore.reset(CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY")); //try copying it to root
+	if (!certificateStore)
+		throw SocketException(GetLastError());
+
+	certificate.reset(CertFindCertificateInStore(certificateStore.get(), X509_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_A, "localhost", NULL));
+	if (!certificate)
+		throw SocketException(GetLastError());
+	
+	auto certPtr = certificate.get();
+
+	schannelCredential.dwVersion = SCHANNEL_CRED_VERSION;
+	schannelCredential.cCreds = 1;
+	schannelCredential.paCred = &certPtr;
+	//schannelCredential.hRootStore = certificateStore.get();
 
 	checkSchannelReturn(QuerySecurityPackageInfoA(const_cast<char*>(packageName), &packageInfo));
 	maxMessage = packageInfo->cbMaxToken;
 	FreeContextBuffer(packageInfo);
 
-	buffer.reset(new char[maxMessage]);
-	outputBuffer.reset(new char[maxMessage]);
+	/*buffer.reset(new char[maxMessage]);
+	outputBuffer.reset(new char[maxMessage]);*/
+	buffer.resize(maxMessage, '\0');
+	outputBuffer.resize(maxMessage, '\0');
 
 	//AcceptAuthSocket
-	/*InSecBuff.cbBuffer = */OutSecBuff.cbBuffer = maxMessage;
-	InSecBuff.BufferType = OutSecBuff.BufferType = SECBUFFER_TOKEN;
-	InSecBuff.pvBuffer = buffer.get();
-	OutSecBuff.pvBuffer = outputBuffer.get();
+	OutSecBuff.cbBuffer = maxMessage;
+	InSecBuff[0].BufferType = OutSecBuff.BufferType = SECBUFFER_TOKEN;
+	InSecBuff[0].pvBuffer = buffer.data();
+	OutSecBuff.pvBuffer = outputBuffer.data();
 
-	checkSchannelReturn(AcquireCredentialsHandle(NULL, const_cast<char*>(packageName), SECPKG_CRED_INBOUND, NULL, NULL, NULL, NULL, &hCredentials, &lifetime));
+	checkSchannelReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>(packageName), SECPKG_CRED_BOTH, nullptr, &schannelCredential, nullptr, nullptr, &hCredentials, &lifetime));
 
 	do
 	{
+		std::int64_t bytesRead = 0;
+		int iterations = 0;
+
+		InSecBuff[1].BufferType = SECBUFFER_EMPTY;
+		InSecBuff[1].pvBuffer = nullptr;
+		InSecBuff[1].cbBuffer = 0;
+
 		try {
-			toggleBlocking(false);
-			while ((bytesRead += Socket::receive(buffer.get(), maxMessage - bytesRead, 0)) < maxMessage);
-			InSecBuff.cbBuffer = bytesRead;
-			bytesRead = 0;
-			toggleBlocking(true);
+			decltype(bytesRead) aux;
+			//NonBlockingSocket blocking(*this);
+			
+			while ((Sleep(5), aux = Socket::receive(buffer.data() + bytesRead, maxMessage - bytesRead, 0)) && (bytesRead += aux) < maxMessage);
+			//{
+			//	//aux = Socket::receive(buffer.data() + bytesRead, maxMessage - bytesRead, 0) < maxMessage;
+			//}
+
+			InSecBuff[0].cbBuffer = bytesRead;
 		}
 		catch (const SocketException &e) {
-			toggleBlocking(true);
-			#ifdef _WIN32
+			InSecBuff[0].cbBuffer = bytesRead;
 			if (e.getErrorCode() != WSAEWOULDBLOCK)
-			#elif defined(__linux__)
-			if (e.getErrorCode() != EWOULDBLOCK)
-			#endif
 				throw;
 		}
 
-		checkSchannelReturn(result = AcceptSecurityContext(&hCredentials, newConversation ? nullptr : &hContext, &InBuffDesc, ASC_REQ_STREAM, SECURITY_NATIVE_DREP, &hContext, &OutBuffDesc, &Attribs, &lifetime));
-		if ((SEC_I_COMPLETE_NEEDED == result) || (SEC_I_COMPLETE_AND_CONTINUE == result))
+		std::cout << "Read " << bytesRead << " bytes from client" << std::endl;
+
+		checkSchannelReturn(result = AcceptSecurityContext(&hCredentials, newConversation ? nullptr : &hContext, &InBuffDesc, Attribs, SECURITY_NATIVE_DREP, &hContext, &OutBuffDesc, &Attribs, &lifetime));
+		
+		if (result == SEC_I_COMPLETE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE)
 			checkSchannelReturn(CompleteAuthToken(&hContext, &OutBuffDesc));
 
 		try {
-			toggleBlocking(false);
-			while ((bytesSent += Socket::send(outputBuffer.get(), maxMessage - bytesSent, 0)) < maxMessage);
-			bytesSent = 0;
-			toggleBlocking(true);
+			std::int64_t bytesSent = 0;
+			while ((bytesSent += Socket::send(OutSecBuff.pvBuffer, OutSecBuff.cbBuffer - bytesSent, 0)) < OutSecBuff.cbBuffer);
+			std::cout << "Sent " << bytesSent << " bytes to client" << std::endl;
 		}
 		catch (const SocketException &e) {
-			toggleBlocking(true);
-			#ifdef _WIN32
 			if (e.getErrorCode() != WSAEWOULDBLOCK)
-			#elif defined(__linux__)
-			if (e.getErrorCode() != EWOULDBLOCK)
-			#endif
 				throw;
 		}
 
 		newConversation = FALSE;
-	} while (!((result == SEC_I_CONTINUE_NEEDED) || (result == SEC_I_COMPLETE_AND_CONTINUE)));
+	} while ((result == SEC_I_CONTINUE_NEEDED) || (result == SEC_I_COMPLETE_AND_CONTINUE));
 	//AcceptAuthSocket
 
 	checkSchannelReturn(QueryContextAttributes(&hContext, SECPKG_ATTR_SIZES, &SecPkgContextSizes));
@@ -409,12 +459,20 @@ TLSSocket* TLSSocket::accept()
 
 std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
 {
-	auto result = Socket::receive(buffer, bufferSize, flags);
 	#ifdef _WIN32
 	if (!contextSetup)
+	{
 		setupContext();
+
+		if (contextSetup)
+		{
+			SecBuffer buffer;
+			SecBufferDesc descriptor = { SECBUFFER_VERSION, 1, &buffer };
+			
+		}
+	}
 	#endif
-	return result;
+	return Socket::receive(buffer, bufferSize, flags);
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -435,6 +493,23 @@ bool operator==(const Socket &lhs, const Socket &rhs) noexcept
 bool operator<(const Socket &lhs, const Socket &rhs) noexcept
 {
 	return lhs.mSock < rhs.mSock;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+NonBlockingSocket::NonBlockingSocket(Socket &socket)
+	:mSocket(socket),
+	oldState(mSocket.isNonBlocking())
+{
+	mSocket.toggleNonBlockingMode(true);
+}
+
+NonBlockingSocket::~NonBlockingSocket()
+{
+	mSocket.toggleNonBlockingMode(oldState);
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

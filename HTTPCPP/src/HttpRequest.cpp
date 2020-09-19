@@ -216,7 +216,8 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 
 	#ifdef _WIN32
 	int flags = 0;
-	mSock->toggleBlocking(false);
+	//mSock->toggleNonBlockingMode(false);
+	NonBlockingSocket nonBlocking(*mSock);
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
@@ -227,6 +228,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 	array<string::value_type, 256> buffer;
 	string::size_type headerEnd = string::npos;
 	std::smatch requestLineMatch, queryStringMatch;
+	bool finished = false;
 
 	do
 	{
@@ -240,13 +242,14 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 		}
 		else
 		{
+			finished = true;
 			#ifndef NDEBUG
 			std::cout << WSAGetLastError() << std::endl;
 			#endif
 			Sleep(sleepTime);
 			--chances;
 		}
-	} while (chances && headerEnd == string::npos);
+	} while ((chances && headerEnd == string::npos) || !finished);
 
 	if (requestText.empty()) {
 		throw RequestException("Request is empty");
@@ -307,10 +310,6 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 			}
 		}
 	}
-
-	#ifdef _WIN32
-	mSock->toggleBlocking(true);
-	#endif
 }
 
 std::string_view Http::Request::Impl::getMethod()
