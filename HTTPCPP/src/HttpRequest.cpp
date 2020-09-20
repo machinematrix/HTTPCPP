@@ -216,44 +216,51 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 
 	#ifdef _WIN32
 	int flags = 0;
+	DWORD timeout = 10000;
 	//mSock->toggleNonBlockingMode(false);
-	NonBlockingSocket nonBlocking(*mSock);
+	//NonBlockingSocket nonBlocking(*mSock);
+	mSock->setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
 
-	constexpr unsigned initialChances = 200, sleepTime = 5;
-	unsigned contentLength, chances = initialChances;
+	unsigned contentLength;
 	string requestText;
-	array<string::value_type, 256> buffer;
+	array<string::value_type, 1024> buffer;
 	string::size_type headerEnd = string::npos;
 	std::smatch requestLineMatch, queryStringMatch;
-	bool finished = false;
-
-	do
+	TLSSocket *tlsSocket = dynamic_cast<TLSSocket*>(&(*mSock));
+	
+	if (tlsSocket)
 	{
-		auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
-
-		if (bytesRead > 0)
+		do
 		{
-			requestText.append(buffer.data(), bytesRead);
-			headerEnd = requestText.rfind("\r\n\r\n");
-			chances = initialChances;
-		}
-		else
-		{
-			finished = true;
-			#ifndef NDEBUG
-			std::cout << WSAGetLastError() << std::endl;
-			#endif
-			Sleep(sleepTime);
-			--chances;
-		}
-	} while ((chances && headerEnd == string::npos) || !finished);
+			auto aux = tlsSocket->receive(flags);
 
-	if (requestText.empty()) {
-		throw RequestException("Request is empty");
-		return;
+			if (aux.empty())
+			{
+				if (headerEnd == std::string::npos)
+					throw RequestException("Invalid request");
+			}
+			else
+			{
+				requestText += aux;
+				headerEnd = requestText.find("\r\n\r\n");
+			}
+		} while (headerEnd == string::npos);
+	}
+	else
+	{
+		do
+		{
+			auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
+
+			if (bytesRead > 0)
+			{
+				requestText.append(buffer.data(), bytesRead);
+				headerEnd = requestText.find("\r\n\r\n");
+			}
+		} while (headerEnd == string::npos);
 	}
 
 	if (headerEnd == string::npos)
@@ -292,21 +299,21 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 	if (contentLength)
 	{
 		mBody.insert(mBody.begin(), requestText.begin() + headerEnd + 4, requestText.end());
-		chances = initialChances;
 
-		while (mBody.size() < contentLength && chances)
+		while (mBody.size() < contentLength)
 		{
-			auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
-
-			if (bytesRead > 0)
+			if (tlsSocket)
 			{
-				mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
-				chances = initialChances;
+				auto aux = tlsSocket->receive(flags);
+
+				mBody.insert(mBody.end(), aux.begin(), aux.end());
 			}
 			else
 			{
-				Sleep(sleepTime);
-				--chances;
+				auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
+
+				if (bytesRead > 0)
+					mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
 			}
 		}
 	}

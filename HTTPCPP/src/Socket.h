@@ -46,7 +46,6 @@ public:
 	Socket(const Socket&) = delete;
 	Socket(Socket&&) noexcept;
 	virtual ~Socket();
-
 	Socket& operator=(const Socket&) = delete;
 	virtual Socket& operator=(Socket&&) noexcept;
 
@@ -55,27 +54,30 @@ public:
 	void listen(int queueLength);
 	void toggleNonBlockingMode(bool toggle);
 	bool isNonBlocking();
+	void setSocketOption(int level, int optionName, const void *optionValue, int optionLength);
 	virtual Socket* accept();
 	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
+	virtual std::string receive(int flags, std::string::size_type expected = std::string::npos);
 	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
 };
 
 class TLSSocket : public Socket
 {
-	CredHandle hCredentials = {};
-	SecHandle hContext = {};
-	bool contextSetup = false;
+	CredHandle mCredentialsHandle = {};
+	SecHandle mContextHandle = {};
+	SecPkgContext_StreamSizes mStreamSizes = {};
+	bool mContextSetup = false;
 
 	void setupContext();
 public:
 	using Socket::Socket;
 	TLSSocket(TLSSocket&&) noexcept;
 	~TLSSocket();
-
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
-	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
+	std::string receive(int flags, std::string::size_type expected = std::string::npos) override;
+	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
 };
 
 bool operator!=(const Socket&, const Socket&) noexcept;

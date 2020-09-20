@@ -97,7 +97,7 @@ void Http::Server::Impl::serverProcedure()
 
 	std::unordered_map<std::shared_ptr<Socket>, SocketInfo> mSocketInfo;
 	SocketPoller poller;
-	ThreadPool pool(std::thread::hardware_concurrency());
+	ThreadPool pool(/*std::thread::hardware_concurrency()*/1);
 	std::chrono::milliseconds socketTTL(5000);
 
 	poller.addSocket(mSock, POLLIN);
