@@ -513,7 +513,7 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 	SecBuffer secBuffer[4];
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, secBuffer };
 	std::unique_ptr<std::uint8_t[]> header(new std::uint8_t[mStreamSizes.cbHeader]), trailer(new std::uint8_t[mStreamSizes.cbTrailer]);
-	std::int64_t result = 0, sent = 0;
+	std::int64_t sent = 0;
 
 	secBuffer[0].BufferType = SECBUFFER_STREAM_HEADER;
 	secBuffer[0].pvBuffer = header.get();
@@ -538,10 +538,10 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 		sent += bytesToSend;
 
 		for (int i = 0; i < sizeof(secBuffer) / sizeof(*secBuffer) - 1; ++i)
-			result += Socket::send(secBuffer[i].pvBuffer, secBuffer[i].cbBuffer, flags);
+			Socket::send(secBuffer[i].pvBuffer, secBuffer[i].cbBuffer, flags);
 	}
 
-	return result;
+	return bufferSize;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
