@@ -4,7 +4,6 @@
 #include <array>
 
 #ifdef _WIN32
-//#define SECURITY_WIN32
 #include <Ws2tcpip.h>
 #include <credssp.h>
 #include <type_traits>
