@@ -143,7 +143,6 @@ Http::Response::Impl::Impl(const std::shared_ptr<Socket> &sock)
 	,mVersion("1.1")
 	,mFields(CaseInsensitiveComparator)
 {
-	setTimeout(5);
 }
 
 void Http::Response::Impl::setBody(const decltype(mBody) &newBody)
