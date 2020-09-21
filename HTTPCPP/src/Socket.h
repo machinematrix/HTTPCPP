@@ -57,7 +57,6 @@ public:
 	void setSocketOption(int level, int optionName, const void *optionValue, int optionLength);
 	virtual Socket* accept();
 	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
-	virtual std::string receive(int flags, std::string::size_type expected = std::string::npos);
 	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
 };
 
@@ -76,7 +75,7 @@ public:
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
-	std::string receive(int flags, std::string::size_type expected = std::string::npos) override;
+	std::string receiveTLSMessage(int flags, std::string::size_type expected = std::string::npos);
 	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
 };
 

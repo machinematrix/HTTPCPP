@@ -235,7 +235,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 	{
 		do
 		{
-			auto aux = tlsSocket->receive(flags);
+			auto aux = tlsSocket->receiveTLSMessage(flags);
 
 			if (aux.empty())
 			{
@@ -304,7 +304,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 		{
 			if (tlsSocket)
 			{
-				auto aux = tlsSocket->receive(flags);
+				auto aux = tlsSocket->receiveTLSMessage(flags);
 
 				mBody.insert(mBody.end(), aux.begin(), aux.end());
 			}
