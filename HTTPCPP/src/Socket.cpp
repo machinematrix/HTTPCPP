@@ -317,15 +317,11 @@ void TLSSocket::setupContext()
 	for (decltype(packageCount) i = 0; i < packageCount; ++i)
 		std::cout << packages[i].Name << std::endl;*/
 
-	constexpr const char *packageName = "Schannel"/*UNISP_NAME_A*/;
+	constexpr const char *packageName = "Schannel";
 	std::string buffer, outputBuffer;
 	PSecPkgInfoA packageInfo;
 	decltype(packageInfo->cbMaxToken) maxMessage, toRead = 5;
 	TimeStamp lifetime;
-	SecBuffer OutSecBuff;
-	SecBufferDesc OutBuffDesc = { SECBUFFER_VERSION, 1, &OutSecBuff };
-	SecBuffer InSecBuff[2];
-	SecBufferDesc InBuffDesc = { SECBUFFER_VERSION, 2, InSecBuff };
 	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
 	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext)*> certificate(nullptr, CertFreeCertificateContext);
 	SCHANNEL_CRED schannelCredential = {};
@@ -334,7 +330,7 @@ void TLSSocket::setupContext()
 	BOOL newConversation = TRUE;
 	ULONG Attribs = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
 
-	certificateStore.reset(CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY")); //try copying it to root
+	certificateStore.reset(CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY"));
 	if (!certificateStore)
 		throw SocketException(GetLastError());
 
@@ -347,7 +343,6 @@ void TLSSocket::setupContext()
 	schannelCredential.dwVersion = SCHANNEL_CRED_VERSION;
 	schannelCredential.cCreds = 1;
 	schannelCredential.paCred = &certPtr;
-	//schannelCredential.hRootStore = certificateStore.get();
 
 	checkSSPIReturn(QuerySecurityPackageInfoA(const_cast<char*>(packageName), &packageInfo));
 	maxMessage = packageInfo->cbMaxToken;
@@ -357,29 +352,24 @@ void TLSSocket::setupContext()
 	outputBuffer.resize(maxMessage, '\0');
 
 	//AcceptAuthSocket
-
 	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>(packageName), SECPKG_CRED_BOTH, nullptr, &schannelCredential, nullptr, nullptr, &mCredentialsHandle, &lifetime));
 
 	do
 	{
+		SecBuffer InSecBuff[2];
+		SecBuffer OutSecBuff;
+		SecBufferDesc InBuffDesc = { SECBUFFER_VERSION, 2, InSecBuff };
+		SecBufferDesc OutBuffDesc = { SECBUFFER_VERSION, 1, &OutSecBuff };
+
+		OutSecBuff.BufferType = SECBUFFER_TOKEN;
 		OutSecBuff.cbBuffer = maxMessage;
 		OutSecBuff.pvBuffer = outputBuffer.data();
-		InSecBuff[0].BufferType = OutSecBuff.BufferType = SECBUFFER_TOKEN;
+		InSecBuff[0].BufferType = SECBUFFER_TOKEN;
 		InSecBuff[0].pvBuffer = buffer.data();
+		InSecBuff[0].cbBuffer = bytesRead += Socket::receive(buffer.data() + bytesRead, toRead, 0);
 		InSecBuff[1].BufferType = SECBUFFER_EMPTY;
 		InSecBuff[1].pvBuffer = nullptr;
 		InSecBuff[1].cbBuffer = 0;
-
-		try {
-			bytesRead += Socket::receive(buffer.data() + bytesRead, toRead, 0);
-
-			InSecBuff[0].cbBuffer = bytesRead;
-		}
-		catch (const SocketException &e) {
-			InSecBuff[0].cbBuffer = bytesRead;
-			if (e.getErrorCode() != WSAEWOULDBLOCK && e.getErrorCode() != WSAETIMEDOUT)
-				throw;
-		}
 
 		result = AcceptSecurityContext(&mCredentialsHandle, newConversation ? nullptr : &mContextHandle, &InBuffDesc, Attribs, SECURITY_NATIVE_DREP, &mContextHandle, &OutBuffDesc, &Attribs, &lifetime);
 		
@@ -394,15 +384,8 @@ void TLSSocket::setupContext()
 			{
 				if (OutSecBuff.BufferType == SECBUFFER_TOKEN)
 				{
-					try {
-						std::int64_t bytesSent = 0;
-						while ((bytesSent += Socket::send(OutSecBuff.pvBuffer, OutSecBuff.cbBuffer - bytesSent, 0)) < OutSecBuff.cbBuffer);
-						std::cout << "Sent " << bytesSent << " bytes to client" << std::endl;
-					}
-					catch (const SocketException &e) {
-						if (e.getErrorCode() != WSAEWOULDBLOCK)
-							throw;
-					}
+					std::int64_t bytesSent = 0;
+					while ((bytesSent += Socket::send(OutSecBuff.pvBuffer, OutSecBuff.cbBuffer - bytesSent, 0)) < OutSecBuff.cbBuffer);
 				}
 
 				toRead = 5;
@@ -528,7 +511,7 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 	if (!mContextSetup)
 		setupContext();
 
-	SecBuffer secBuffer[4] = {};
+	SecBuffer secBuffer[4];
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, secBuffer };
 	std::unique_ptr<std::uint8_t[]> header(new std::uint8_t[mStreamSizes.cbHeader]), trailer(new std::uint8_t[mStreamSizes.cbTrailer]);
 	std::int64_t result = 0, sent = 0;
@@ -541,6 +524,8 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 	secBuffer[2].pvBuffer = trailer.get();
 	secBuffer[2].cbBuffer = mStreamSizes.cbTrailer;
 	secBuffer[3].BufferType = SECBUFFER_EMPTY;
+	secBuffer[3].pvBuffer = nullptr;
+	secBuffer[3].cbBuffer = 0;
 
 	while (sent < bufferSize)
 	{
