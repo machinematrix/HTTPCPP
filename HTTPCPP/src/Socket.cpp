@@ -286,6 +286,8 @@ std::int64_t Socket::receive(void *buffer, size_t bufferSize, int flags)
 {
 	std::int64_t result = recv(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
 
+	if (!result)
+		throw SocketException("The other side closed the connection (recv returned 0)");
 	checkReturn(static_cast<int>(result));
 
 	return result;

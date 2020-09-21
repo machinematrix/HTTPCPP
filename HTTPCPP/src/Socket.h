@@ -24,6 +24,7 @@ class SocketException : public std::runtime_error
 {
 	int errorCode;
 public:
+	using std::runtime_error::runtime_error;
 	SocketException(int code);
 	int getErrorCode() const;
 };
