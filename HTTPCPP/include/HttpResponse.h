@@ -28,7 +28,8 @@ namespace Http
 		void setField(std::string_view field, std::string_view value);
 		std::optional<std::string_view> getField(HeaderField field);
 		std::optional<std::string_view> getField(std::string_view field);
-		void setTimeout(int milliseconds);
+		void sendHeaders();
+		void sendBytes(const std::vector<std::uint8_t> &bytes);
 		void send();
 	};
 

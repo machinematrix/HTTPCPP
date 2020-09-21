@@ -31,7 +31,8 @@ public:
 	void setField(std::string_view field, std::string_view value);
 	std::optional<std::string_view> getField(HeaderField);
 	std::optional<std::string_view> getField(std::string_view);
-	void setTimeout(unsigned);
+	void sendHeaders();
+	void sendBytes(const std::vector<std::uint8_t> &bytes);
 	void send();
 };
 
@@ -190,14 +191,33 @@ std::optional<std::string_view> Http::Response::Impl::getField(std::string_view 
 	}
 }
 
-void Http::Response::Impl::setTimeout(unsigned milliseconds)
+void Http::Response::Impl::sendHeaders()
 {
-	#ifdef _WIN32
-	DWORD time = milliseconds;
-	#elif defined(__linux__)
-	struct timeval time = { milliseconds / 1000, (milliseconds % 1000) * 1000 };
-	#endif
-	//setsockopt(mSock, SOL_SOCKET, SO_SNDTIMEO, (char*)&time, sizeof(time));
+	if (!mStatusCode)
+		throw ResponseException("No status code set");
+	constexpr const char *fieldEnd = "\r\n";
+	std::string response = "HTTP/" + mVersion + ' ' + std::to_string(mStatusCode) + fieldEnd;
+	std::int64_t bytesSent = 0;
+
+	for (const auto &fieldValue : mFields) {
+		response += fieldValue.first;
+		response += ": ";
+		response += fieldValue.second;
+		response += fieldEnd;
+	}
+
+	response += fieldEnd;
+
+	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
+		bytesSent += mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
+}
+
+void Http::Response::Impl::sendBytes(const std::vector<std::uint8_t> &bytes)
+{
+	std::int64_t bytesSent = 0;
+
+	while (bytesSent < static_cast<decltype(bytesSent)>(bytes.size()))
+		bytesSent += mSock->send(const_cast<std::uint8_t*>(bytes.data()) + bytesSent, bytes.size() - bytesSent, 0);
 }
 
 void Http::Response::Impl::send()
@@ -213,8 +233,7 @@ void Http::Response::Impl::send()
 
 	for (const auto &fieldValue : mFields) {
 		response += fieldValue.first;
-		response += ':';
-		response += ' ';
+		response += ": ";
 		response += fieldValue.second;
 		response += fieldEnd;
 	}
@@ -309,9 +328,14 @@ std::optional<std::string_view> Http::Response::getField(std::string_view field)
 	return mThis->getField(field);
 }
 
-void Http::Response::setTimeout(int milliseconds)
+void Http::Response::sendHeaders()
 {
-	mThis->setTimeout(milliseconds);
+	mThis->sendHeaders();
+}
+
+void Http::Response::sendBytes(const std::vector<std::uint8_t> &bytes)
+{
+	mThis->sendBytes(bytes);
 }
 
 void Http::Response::send()
