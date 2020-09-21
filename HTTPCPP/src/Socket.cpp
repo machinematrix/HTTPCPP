@@ -457,7 +457,7 @@ TLSSocket* TLSSocket::accept()
 	#endif
 }
 
-std::string TLSSocket::receiveTLSMessage(int flags, std::string::size_type expected)
+std::string TLSSocket::receiveTLSMessage(int flags)
 {
 	std::string result;
 

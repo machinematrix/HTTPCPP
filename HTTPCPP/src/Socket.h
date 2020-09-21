@@ -76,7 +76,7 @@ public:
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
-	std::string receiveTLSMessage(int flags, std::string::size_type expected = std::string::npos);
+	std::string receiveTLSMessage(int flags);
 	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
 };
 
