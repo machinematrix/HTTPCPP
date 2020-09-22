@@ -68,7 +68,7 @@ class TLSSocket : public Socket
 	SecPkgContext_StreamSizes mStreamSizes = {};
 	bool mContextSetup = false;
 
-	void setupContext();
+	std::string setupContext();
 public:
 	using Socket::Socket;
 	TLSSocket(TLSSocket&&) noexcept;

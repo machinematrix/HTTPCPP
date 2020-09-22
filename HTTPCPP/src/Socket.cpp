@@ -59,7 +59,6 @@ namespace
 
 	void checkSSPIReturn(SECURITY_STATUS ret)
 	{
-		//if (ret != SEC_E_OK)
 		if (ret < 0)
 			throw SocketException(ret);
 	}
@@ -307,7 +306,7 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-void TLSSocket::setupContext()
+std::string TLSSocket::setupContext()
 {
 	//certmgr.msc - certificate store
 	#ifdef _WIN32
@@ -317,9 +316,8 @@ void TLSSocket::setupContext()
 
 	for (decltype(packageCount) i = 0; i < packageCount; ++i)
 		std::cout << packages[i].Name << std::endl;*/
-
 	constexpr const char *packageName = "Schannel";
-	std::string buffer, outputBuffer;
+	std::string buffer, outputBuffer, extraData;
 	PSecPkgInfoA packageInfo;
 	decltype(packageInfo->cbMaxToken) maxMessage, toRead = 5;
 	TimeStamp lifetime;
@@ -381,6 +379,9 @@ void TLSSocket::setupContext()
 				checkSSPIReturn(CompleteAuthToken(&mContextHandle, &OutBuffDesc));
 				[[fallthrough]];
 			case SEC_E_OK:
+				if (OutSecBuff.BufferType == SECBUFFER_EXTRA)
+					extraData.append(static_cast<std::string::value_type*>(InSecBuff[0].pvBuffer) + InSecBuff[0].cbBuffer - InSecBuff[1].cbBuffer, InSecBuff[1].cbBuffer);
+				[[fallthrough]];
 			case SEC_I_CONTINUE_NEEDED:
 			{
 				if (OutSecBuff.BufferType == SECBUFFER_TOKEN)
@@ -391,6 +392,7 @@ void TLSSocket::setupContext()
 
 				toRead = 5;
 				bytesRead = 0;
+
 				break;
 			}
 			case SEC_E_INCOMPLETE_MESSAGE:
@@ -410,6 +412,8 @@ void TLSSocket::setupContext()
 
 	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes));
 	mContextSetup = true;
+
+	return extraData;
 	#endif
 }
 
@@ -459,20 +463,22 @@ TLSSocket* TLSSocket::accept()
 
 std::string TLSSocket::receiveTLSMessage(int flags)
 {
-	std::string result;
+	std::string result, extraData;
 
 	#ifdef _WIN32
 	if (!mContextSetup)
-		setupContext();
+		extraData = setupContext();
 
 	if (mContextSetup)
 	{
-		std::int64_t bytesRead = 0, toRead = 5;
-		std::string message(toRead, '\0');
+		std::string message(extraData);
 		SecBuffer buffer[4] = {};
 		SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, buffer };
+		std::int64_t bytesRead = extraData.size(), toRead = 5;
 		SECURITY_STATUS ret;
 		unsigned long fQop;
+
+		message.resize(message.size() + toRead, '\0');
 
 		do
 		{
