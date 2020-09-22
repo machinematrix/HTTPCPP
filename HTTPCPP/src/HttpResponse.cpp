@@ -208,7 +208,23 @@ void Http::Response::Impl::sendHeaders()
 	response += fieldEnd;
 
 	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
-		bytesSent += mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
+	{
+		decltype(bytesSent) auxBytesSent = mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
+
+		if (auxBytesSent > 0)
+			bytesSent += auxBytesSent;
+		else {
+			#ifdef _WIN32
+			LPSTR message;
+			FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
+			std::string strMsg(message);
+			LocalFree(message);
+			throw ResponseException(strMsg);
+			#elif defined(__linux__)
+			throw ResponseException(std::strerror(errno));
+			#endif
+		}
+	}
 }
 
 void Http::Response::Impl::sendBytes(const std::vector<std::uint8_t> &bytes)
@@ -241,24 +257,8 @@ void Http::Response::Impl::send()
 
 	response.insert(response.end(), mBody.begin(), mBody.end());
 
-	while (bytesSent < (decltype(bytesSent))response.size())
-	{
-		decltype(bytesSent) auxBytesSent = mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
-
-		if (auxBytesSent > 0)
-			bytesSent += auxBytesSent;
-		else /*if (auxBytesSent == SOCKET_ERROR)*/ {
-			#ifdef _WIN32
-			LPSTR message;
-			FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
-			std::string strMsg(message);
-			LocalFree(message);
-			throw ResponseException(strMsg);
-			#elif defined(__linux__)
-			throw ResponseException(std::strerror(errno));
-			#endif
-		}
-	}
+	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
+		bytesSent += mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
