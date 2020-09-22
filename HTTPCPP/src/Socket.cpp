@@ -388,10 +388,9 @@ std::string TLSSocket::setupContext()
 				{
 					std::int64_t bytesSent = 0;
 					while ((bytesSent += Socket::send(OutSecBuff.pvBuffer, OutSecBuff.cbBuffer - bytesSent, 0)) < OutSecBuff.cbBuffer);
+					toRead = 5;
+					bytesRead = 0;
 				}
-
-				toRead = 5;
-				bytesRead = 0;
 
 				break;
 			}
