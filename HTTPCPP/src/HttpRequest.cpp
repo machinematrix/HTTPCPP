@@ -220,6 +220,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 	//mSock->toggleNonBlockingMode(false);
 	//NonBlockingSocket nonBlocking(*mSock);
 	mSock->setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	mSock->setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
