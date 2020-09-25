@@ -109,7 +109,7 @@ void Http::Server::Impl::serverProcedure()
 		poller.poll(1000, std::bind(&Impl::serve, this, _1, _2, std::ref(pool), std::ref(poller), std::ref(mSocketInfo), socketTTL));
 	}
 }
-
+ 
 void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFileDescriptor::revents) revents, ThreadPool &mPool, SocketPoller &poller, std::unordered_map<std::shared_ptr<Socket>, SocketInfo> &mSocketInfo, std::chrono::milliseconds mSocketTimeToLive)
 {
 	using std::chrono::steady_clock;
