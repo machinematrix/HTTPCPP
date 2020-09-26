@@ -84,7 +84,9 @@ void Http::Server::Impl::serverProcedure()
 {
 	using namespace std::placeholders;
 	try {
-		mSock->listen(mQueueLength);
+		if (mSock)
+			mSock->listen(mQueueLength);
+		if (mSockSecure)
 		mSockSecure->listen(mQueueLength);
 		mStatus.store(ServerStatus::RUNNING);
 	}
@@ -100,7 +102,10 @@ void Http::Server::Impl::serverProcedure()
 	ThreadPool pool(static_cast<size_t>(std::thread::hardware_concurrency()) * 2ull);
 	std::chrono::milliseconds socketTTL(5000);
 
-	poller.addSocket(mSock, POLLIN);
+	if (mSock)
+		poller.addSocket(mSock, POLLIN);
+
+	if (mSockSecure)
 	poller.addSocket(mSockSecure, POLLIN);
 
 	while (mStatus.load() == ServerStatus::RUNNING)
@@ -184,7 +189,10 @@ void Http::Server::Impl::dispatch(std::unordered_map<std::shared_ptr<Socket>, So
 Http::Server::Impl::~Impl()
 {
 	mStatus.store(ServerStatus::STOPPED);
-	mSock->close();
+	if (mSock)
+		mSock->close();
+	if (mSockSecure)
+		mSockSecure->close();
 	if(mServerThread.joinable())
 		mServerThread.join();
 }
@@ -259,16 +267,19 @@ void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) con
 }
 
 Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength)
-	:mSock(new Socket(AF_INET, SOCK_STREAM, 0))
-	,mSockSecure(new TLSSocket(AF_INET, SOCK_STREAM, 0))
+	:mSock(port ? new Socket(AF_INET, SOCK_STREAM, 0) : nullptr)
+	,mSockSecure(portSecure ? new TLSSocket(AF_INET, SOCK_STREAM, 0) : nullptr)
 	,mPort(port)
 	,mPortSecure(portSecure)
 	,mStatus(ServerStatus::UNINITIALIZED)
 	,mEndpointLogger(placeholderLogger)
 	,mQueueLength(connectionQueueLength)
 {
-	mSock->bind("0.0.0.0", mPort, true);
-	mSockSecure->bind("0.0.0.0", mPortSecure, true);
+	if (mSock)
+		mSock->bind("0.0.0.0", mPort, true);
+
+	if (mSockSecure)
+		mSockSecure->bind("0.0.0.0", mPortSecure, true);
 }
 
 void Http::Server::Impl::start()
