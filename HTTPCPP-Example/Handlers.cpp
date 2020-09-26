@@ -27,9 +27,9 @@ namespace
 
 	void setKeepAlive(Request &request, Response &response)
 	{
-		auto connectionHeader = request.getField(/*Http::Request::HeaderField::Connection*/"connection");
+		auto connectionHeader = request.getField("connection");
 
-		if (connectionHeader || connectionHeader.value() == "keep-alive")
+		if (connectionHeader && connectionHeader.value() == "keep-alive")
 			response.setField(Response::HeaderField::Connection, "keep-alive");
 		else
 			response.setField(Response::HeaderField::Connection, "close");
@@ -163,14 +163,12 @@ void video(Request &req, Response &resp) //?name=<video file name>
 
 		resp.setField(Response::HeaderField::ContentType, "video/mp4");
 		resp.setField(Response::HeaderField::CacheControl, "no-store");
+		resp.setField(Response::HeaderField::AcceptRanges, "bytes");
 
 		setKeepAlive(req, resp);
 
 		if (range && std::regex_match(range.value().data(), results, rangeFormat))
 		{
-			#ifndef NDEBUG
-			std::cout << "<<------Range: " << range.value() << std::endl;
-			#endif
 			rangeBegin = std::stoull(results[1]);
 			rangeEnd = (results[2].str().empty() ? std::min<decltype(chunk)::size_type>(rangeBegin + 1024 * 1024, fileSize) : std::stoull(results[2]));
 
@@ -182,23 +180,26 @@ void video(Request &req, Response &resp) //?name=<video file name>
 				resp.setField(Response::HeaderField::ContentLength, std::to_string(chunk.size()));
 				resp.setBody(chunk);
 				resp.setStatusCode(206);
-				#ifndef NDEBUG
-				std::cout << "------>>Content-Range: " << resp.getField("content-range").value() << std::endl;
-				#endif
 			}
 			else {
 				resp.setStatusCode(416);
-				#ifndef NDEBUG
-				std::cout << "Sending request unsatisfiable" << std::endl;
-				#endif
 			}
 		}
 		else {
+			size_t sent = 0, fileSize = getFileSize(name.value());
+
 			resp.setStatusCode(200);
-			resp.setField(Response::HeaderField::AcceptRanges, "bytes");
-			#ifndef NDEBUG
-			std::cout << "Sending AcceptRanges" << std::endl;
-			#endif
+			resp.setField(Response::HeaderField::ContentLength, std::to_string(fileSize));
+			resp.sendHeaders();
+
+			while (sent < fileSize)
+			{
+				chunk = loadFile(name.value(), sent, std::min(fileSize, sent + 1024ull * 1024ull * 4ull));
+				resp.sendBytes(chunk);
+				sent += chunk.size();
+			}
+
+			return;
 		}
 	}
 	else
