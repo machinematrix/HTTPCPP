@@ -455,6 +455,8 @@ TLSSocket::TLSSocket(int domain, int type, int protocol, std::string_view certif
 
 TLSSocket::TLSSocket(TLSSocket &&other) noexcept
 	:Socket(std::move(other)),
+	mCertificateStore(std::move(other.mCertificateStore)),
+	mCertificateName(std::move(other.mCertificateName)),
 	mCredentialsHandle(other.mCredentialsHandle),
 	mContextHandle(other.mContextHandle),
 	mStreamSizes(other.mStreamSizes),
@@ -473,6 +475,8 @@ TLSSocket::~TLSSocket()
 TLSSocket& TLSSocket::operator=(TLSSocket &&other) noexcept
 {
 	*static_cast<Socket*>(this) = std::move(other);
+	mCertificateStore = std::move(other.mCertificateStore);
+	mCertificateName = std::move(other.mCertificateName);
 	mCredentialsHandle = other.mCredentialsHandle;
 	other.mCredentialsHandle = CredHandle{};
 	mContextHandle = other.mContextHandle;
