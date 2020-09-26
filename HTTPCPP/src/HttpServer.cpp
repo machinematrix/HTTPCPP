@@ -71,7 +71,7 @@ class Http::Server::Impl
 	void dispatch(std::unordered_map<std::shared_ptr<Socket>, SocketInfo>::iterator);
 	void handleRequest(std::shared_ptr<Socket>) const;
 public:
-	Impl(std::uint16_t, std::uint16_t, int);
+	Impl(std::uint16_t, std::uint16_t, int, std::string_view, std::string_view);
 	~Impl();
 
 	void start();
@@ -266,9 +266,9 @@ void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) con
 	}
 }
 
-Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength)
+Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength, std::string_view certificateStore, std::string_view certificateName)
 	:mSock(port ? new Socket(AF_INET, SOCK_STREAM, 0) : nullptr)
-	,mSockSecure(portSecure ? new TLSSocket(AF_INET, SOCK_STREAM, 0) : nullptr)
+	,mSockSecure(portSecure ? new TLSSocket(AF_INET, SOCK_STREAM, 0, certificateStore, certificateName) : nullptr)
 	,mPort(port)
 	,mPortSecure(portSecure)
 	,mStatus(ServerStatus::UNINITIALIZED)
@@ -316,8 +316,8 @@ void Http::Server::Impl::setResourceCallback(const std::string_view &path, const
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Server::Server(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength)
-	:mThis(new Impl(port, portSecure, connectionQueueLength))
+Http::Server::Server(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength, std::string_view certificateStore, std::string_view certificateName)
+	:mThis(new Impl(port, portSecure, connectionQueueLength, certificateStore, certificateName))
 {}
 
 Http::Server::~Server() noexcept

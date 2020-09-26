@@ -70,6 +70,7 @@ public:
 
 class TLSSocket : public Socket
 {
+	std::string mCertificateStore, mCertificateName;
 	CredHandle mCredentialsHandle = {};
 	SecHandle mContextHandle = {};
 	SecPkgContext_StreamSizes mStreamSizes = {};
@@ -77,9 +78,10 @@ class TLSSocket : public Socket
 
 	std::string negotiate();
 public:
-	using Socket::Socket;
+	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateName);
+	TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateName);
 	TLSSocket(TLSSocket&&) noexcept;
-	~TLSSocket();
+	~TLSSocket() override;
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;

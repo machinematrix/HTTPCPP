@@ -19,7 +19,7 @@ namespace Http
 		using HandlerCallback = void(Request&, Response&);
 		using LoggerCallback = void(std::string_view);
 
-		Server(std::uint16_t port = 80, std::uint16_t portSecure = 443, int connectionQueueLength = 6);
+		Server(std::uint16_t port = 80, std::uint16_t portSecure = 443, int connectionQueueLength = 6, std::string_view certificateStore = "", std::string_view certificateName = "");
 		~Server() noexcept;
 		Server(Server&&) noexcept;
 		Server& operator=(Server&&) noexcept;
@@ -30,8 +30,6 @@ namespace Http
 		void setErrorLogger(const std::function<LoggerCallback> &callback) noexcept;
 		void setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback);
 	};
-
-	//using ServerException = std::runtime_error;
 }
 
 #endif

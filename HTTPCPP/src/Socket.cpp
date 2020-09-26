@@ -340,11 +340,11 @@ std::string TLSSocket::negotiate()
 	BOOL newConversation = TRUE;
 	ULONG Attribs = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
 
-	certificateStore.reset(CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY"));
+	certificateStore.reset(CertOpenSystemStoreA(NULL, mCertificateStore.c_str())/*CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY")*/);
 	if (!certificateStore)
 		throw SocketException(GetLastError());
 
-	certificate.reset(CertFindCertificateInStore(certificateStore.get(), X509_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_A, "localhost", NULL));
+	certificate.reset(CertFindCertificateInStore(certificateStore.get(), X509_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_A, mCertificateName.c_str(), NULL));
 	if (!certificate)
 		throw SocketException(GetLastError());
 	
@@ -441,6 +441,18 @@ std::string TLSSocket::negotiate()
 	#endif
 }
 
+TLSSocket::TLSSocket(DescriptorType sock, std::string_view certificateStore, std::string_view certificateName)
+	:Socket(sock),
+	mCertificateStore(certificateStore),
+	mCertificateName(certificateName)
+{}
+
+TLSSocket::TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateName)
+	:Socket(domain, type, protocol),
+	mCertificateStore(certificateStore),
+	mCertificateName(certificateName)
+{}
+
 TLSSocket::TLSSocket(TLSSocket &&other) noexcept
 	:Socket(std::move(other)),
 	mCredentialsHandle(other.mCredentialsHandle),
@@ -476,7 +488,7 @@ TLSSocket* TLSSocket::accept()
 	DescriptorType clientSocket = ::accept(mSock, nullptr, nullptr);
 
 	if (clientSocket != SOCKET_ERROR)
-		return new TLSSocket(clientSocket);
+		return new TLSSocket(clientSocket, mCertificateStore, mCertificateName);
 	else
 		#ifdef _WIN32
 		throw SocketException(WSAGetLastError());
