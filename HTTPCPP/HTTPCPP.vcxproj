@@ -50,9 +50,6 @@
     <ClCompile Include="src\HttpServer.cpp" />
     <ClCompile Include="src\ThreadPool.cpp" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="Makefile" />
-  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{FDEE0D92-397C-4AF5-B3EC-1B76BAA6F4B5}</ProjectGuid>
