@@ -4,9 +4,13 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <stdexcept>
+#include <variant>
 
 #ifdef _WIN32
+#define SECURITY_WIN32
 #include <winsock2.h>
+#include <security.h>
 using PollFileDescriptor = WSAPOLLFD;
 using DescriptorType = SOCKET;
 #elif defined __linux__
@@ -17,36 +21,87 @@ using DescriptorType = int;
 
 class WinsockLoader;
 
+class SocketException : public std::runtime_error
+{
+public:
+	using AdditionalInformationType = std::variant<decltype(SecBuffer::cbBuffer)>;
+private:
+	int mErrorCode;
+	AdditionalInformationType mAdditionalInformation;
+public:
+	using std::runtime_error::runtime_error;
+	SocketException(int code);
+	int getErrorCode() const;
+	AdditionalInformationType getAdditionalInformation() const;
+	void setAdditionalInformation(const AdditionalInformationType &info);
+};
+
 class Socket
 {
 	friend class SocketPoller;
 	friend bool operator!=(const Socket&, const Socket&) noexcept;
 	friend bool operator<(const Socket&, const Socket&) noexcept;
 	std::unique_ptr<WinsockLoader> loader;
+protected:
 	DescriptorType mSock;
-	int domain, type, protocol;
+private:
+	int mDomain, mType, mProtocol;
+	bool mNonBlocking = false;
 public:
+	//Must be used with sockets returned from accept
 	Socket(DescriptorType);
 	Socket(int domain, int type, int protocol);
 	Socket(const Socket&) = delete;
 	Socket(Socket&&) noexcept;
-	~Socket();
-
+	virtual ~Socket();
 	Socket& operator=(const Socket&) = delete;
-	Socket& operator=(Socket&&) noexcept;
+	virtual Socket& operator=(Socket&&) noexcept;
 
 	void close();
 	void bind(std::string_view address, short port, bool numericAddress);
 	void listen(int queueLength);
-	void toggleBlocking(bool toggle);
-	Socket accept();
-	std::int64_t receive(void *buffer, size_t bufferSize, int flags);
-	std::int64_t send(void *buffer, size_t bufferSize, int flags);
+	void toggleNonBlockingMode(bool toggle);
+	bool isNonBlocking();
+	void setSocketOption(int level, int optionName, const void *optionValue, int optionLength);
+	virtual Socket* accept();
+	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
+	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
+};
+
+class TLSSocket : public Socket
+{
+	std::string mCertificateStore, mCertificateName;
+	CredHandle mCredentialsHandle = {};
+	SecHandle mContextHandle = {};
+	SecPkgContext_StreamSizes mStreamSizes = {};
+	bool mNegotiationCompleted = false;
+
+	std::string negotiate();
+public:
+	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateName);
+	TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateName);
+	TLSSocket(TLSSocket&&) noexcept;
+	~TLSSocket() override;
+	TLSSocket& operator=(TLSSocket&&) noexcept;
+
+	TLSSocket* accept() override;
+	std::string receiveTLSMessage(int flags);
+	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
+	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
 };
 
 bool operator!=(const Socket&, const Socket&) noexcept;
 bool operator==(const Socket&, const Socket&) noexcept;
 bool operator<(const Socket&, const Socket&) noexcept;
+
+class NonBlockingSocket
+{
+	Socket &mSocket;
+	bool oldState;
+public:
+	NonBlockingSocket(Socket&);
+	~NonBlockingSocket();
+};
 
 class SocketPoller
 {

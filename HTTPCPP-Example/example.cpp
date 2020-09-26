@@ -117,7 +117,7 @@ std::vector<std::uint8_t> loadFile(const std::string_view &fileName, std::stream
 
 void logger(std::string_view msg)
 {
-	std::cout << msg << std::endl;
+	std::cout << "Endpoint logger: " << msg << std::endl;
 }
 
 void errorLogger(std::string_view msg)
@@ -133,14 +133,14 @@ int main()
 
 	try {
 		std::string input;
-		Http::Server sv(80, 100); //you'll need root privileges to start a server on ports under 1024
+		Http::Server sv(80, 443, 50, "MY", "localhost"); //You'll need a server authentication certificate named 'localhost' in the personal certificate store for this to work.
 
 		sv.setResourceCallback("/images", std::bind(list, std::placeholders::_1, std::placeholders::_2, "image", ".jpg"));
 		sv.setResourceCallback("/videos", std::bind(list, std::placeholders::_1, std::placeholders::_2, "video", ".mp4"));
 		sv.setResourceCallback("/", redirect);
 		sv.setResourceCallback("/favicon.ico", favicon);
 		sv.setResourceCallback("/image", image);
-		sv.setResourceCallback("/video", video); //Only works with Chrome and Firefox for some reason
+		sv.setResourceCallback("/video", video);
 		sv.setEndpointLogger(logger);
 		sv.setErrorLogger(errorLogger);
 		sv.start();
@@ -158,7 +158,7 @@ int main()
 			}
 		} while (input != "exit" && cin);
 	}
-	catch (const Http::ServerException &e) {
+	catch (const std::runtime_error &e) {
 		cout << e.what() << endl;
 	}
 

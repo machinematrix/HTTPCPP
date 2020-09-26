@@ -61,9 +61,9 @@ class Http::Server::Impl
 	
 	std::function<LoggerCallback> mEndpointLogger = placeholderLogger;
 	std::function<LoggerCallback> mErrorLogger = placeholderLogger;
-	std::shared_ptr<Socket> mSock;
+	std::shared_ptr<Socket> mSock, mSockSecure;
 	const int mQueueLength;
-	std::uint16_t mPort;
+	std::uint16_t mPort, mPortSecure;
 	std::atomic<ServerStatus> mStatus; //1 byte
 
 	void serverProcedure();
@@ -71,7 +71,7 @@ class Http::Server::Impl
 	void dispatch(std::unordered_map<std::shared_ptr<Socket>, SocketInfo>::iterator);
 	void handleRequest(std::shared_ptr<Socket>) const;
 public:
-	Impl(std::uint16_t port, int);
+	Impl(std::uint16_t, std::uint16_t, int, std::string_view, std::string_view);
 	~Impl();
 
 	void start();
@@ -84,7 +84,10 @@ void Http::Server::Impl::serverProcedure()
 {
 	using namespace std::placeholders;
 	try {
-		mSock->listen(mQueueLength);
+		if (mSock)
+			mSock->listen(mQueueLength);
+		if (mSockSecure)
+		mSockSecure->listen(mQueueLength);
 		mStatus.store(ServerStatus::RUNNING);
 	}
 	catch (const std::runtime_error &e) {
@@ -96,10 +99,14 @@ void Http::Server::Impl::serverProcedure()
 
 	std::unordered_map<std::shared_ptr<Socket>, SocketInfo> mSocketInfo;
 	SocketPoller poller;
-	ThreadPool pool(std::thread::hardware_concurrency());
+	ThreadPool pool(static_cast<size_t>(std::thread::hardware_concurrency()) * 2ull);
 	std::chrono::milliseconds socketTTL(5000);
 
-	poller.addSocket(mSock, POLLIN);
+	if (mSock)
+		poller.addSocket(mSock, POLLIN);
+
+	if (mSockSecure)
+	poller.addSocket(mSockSecure, POLLIN);
 
 	while (mStatus.load() == ServerStatus::RUNNING)
 	{
@@ -107,16 +114,16 @@ void Http::Server::Impl::serverProcedure()
 		poller.poll(1000, std::bind(&Impl::serve, this, _1, _2, std::ref(pool), std::ref(poller), std::ref(mSocketInfo), socketTTL));
 	}
 }
-
+ 
 void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFileDescriptor::revents) revents, ThreadPool &mPool, SocketPoller &poller, std::unordered_map<std::shared_ptr<Socket>, SocketInfo> &mSocketInfo, std::chrono::milliseconds mSocketTimeToLive)
 {
 	using std::chrono::steady_clock;
 
 	if (revents & POLLIN)
 	{
-		if (socket == mSock) //if it's the server socket
+		if (socket == mSock || socket == mSockSecure) //if it's the server socket
 		{
-			std::shared_ptr<Socket> clientSocket(new Socket(socket->accept()));
+			std::shared_ptr<Socket> clientSocket(socket->accept());
 
 			#ifndef NDEBUG
 			mEndpointLogger(std::string(__func__) + ' ' + "accept() returned new socket ");
@@ -146,6 +153,7 @@ void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFile
 		}
 	}
 	else if (socket != mSock &&
+			 socket != mSockSecure &&
 			 revents & POLLNVAL &&
 			 !mSocketInfo.find(socket)->second.mIsBeingServed.load())
 	{ //if I closed the socket after handling the request, stop monitoring it
@@ -158,6 +166,7 @@ void Http::Server::Impl::serve(std::shared_ptr<Socket> socket, decltype(PollFile
 		//mSockets.erase(mSockets.begin() + i);
 	}
 	else if (socket != mSock &&
+			 socket != mSockSecure &&
 			 !mSocketInfo.find(socket)->second.mIsBeingServed.load() &&
 			 (revents & POLLHUP || steady_clock::now() - mSocketInfo.find(socket)->second.mLastServedTimePoint > mSocketTimeToLive))
 	{ //if the other side disconnected or if the sockets TTL has expired, close the socket.
@@ -180,7 +189,10 @@ void Http::Server::Impl::dispatch(std::unordered_map<std::shared_ptr<Socket>, So
 Http::Server::Impl::~Impl()
 {
 	mStatus.store(ServerStatus::STOPPED);
-	mSock->close();
+	if (mSock)
+		mSock->close();
+	if (mSockSecure)
+		mSockSecure->close();
 	if(mServerThread.joinable())
 		mServerThread.join();
 }
@@ -254,14 +266,20 @@ void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) con
 	}
 }
 
-Http::Server::Impl::Impl(std::uint16_t port, int connectionQueueLength)
-	:mSock(new Socket(AF_INET, SOCK_STREAM, 0))
+Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength, std::string_view certificateStore, std::string_view certificateName)
+	:mSock(port ? new Socket(AF_INET, SOCK_STREAM, 0) : nullptr)
+	,mSockSecure(portSecure ? new TLSSocket(AF_INET, SOCK_STREAM, 0, certificateStore, certificateName) : nullptr)
 	,mPort(port)
+	,mPortSecure(portSecure)
 	,mStatus(ServerStatus::UNINITIALIZED)
 	,mEndpointLogger(placeholderLogger)
 	,mQueueLength(connectionQueueLength)
 {
-	mSock->bind("0.0.0.0", mPort, true);
+	if (mSock)
+		mSock->bind("0.0.0.0", mPort, true);
+
+	if (mSockSecure)
+		mSockSecure->bind("0.0.0.0", mPortSecure, true);
 }
 
 void Http::Server::Impl::start()
@@ -272,7 +290,7 @@ void Http::Server::Impl::start()
 	mStatusChanged.wait(lck, [this]() -> bool { return mStatus.load() != ServerStatus::UNINITIALIZED; });
 
 	if (mStatus.load() != ServerStatus::RUNNING) {
-		throw ServerException("Could not start server");
+		throw std::runtime_error("Could not start server");
 	}
 }
 
@@ -298,8 +316,8 @@ void Http::Server::Impl::setResourceCallback(const std::string_view &path, const
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Server::Server(std::uint16_t mPort, int connectionQueueLength)
-	:mThis(new Impl(mPort, connectionQueueLength))
+Http::Server::Server(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength, std::string_view certificateStore, std::string_view certificateName)
+	:mThis(new Impl(port, portSecure, connectionQueueLength, certificateStore, certificateName))
 {}
 
 Http::Server::~Server() noexcept
