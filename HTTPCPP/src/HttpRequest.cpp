@@ -230,7 +230,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 	array<string::value_type, 1024> buffer;
 	string::size_type headerEnd = string::npos;
 	std::smatch requestLineMatch, queryStringMatch;
-	TLSSocket *tlsSocket = dynamic_cast<TLSSocket*>(&(*mSock));
+	TLSSocket *tlsSocket = dynamic_cast<TLSSocket*>(mSock.get());
 	
 	if (tlsSocket)
 	{
@@ -251,7 +251,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 		} while (headerEnd == string::npos);
 	}
 	else
-	{
+	{		
 		do
 		{
 			auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);

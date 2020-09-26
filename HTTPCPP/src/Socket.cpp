@@ -109,12 +109,22 @@ public:
 
 SocketException::SocketException(int code)
 	:std::runtime_error(formatMessage(code)),
-	errorCode(code)
+	mErrorCode(code)
 {}
 
 int SocketException::getErrorCode() const
 {
-	return errorCode;
+	return mErrorCode;
+}
+
+decltype(SocketException::mAdditionalInformation) SocketException::getAdditionalInformation() const
+{
+	return mAdditionalInformation;
+}
+
+void SocketException::setAdditionalInformation(const AdditionalInformationType &info)
+{
+	mAdditionalInformation = info;
 }
 
 Socket::Socket(DescriptorType sock)
@@ -285,7 +295,7 @@ std::int64_t Socket::receive(void *buffer, size_t bufferSize, int flags)
 {
 	std::int64_t result = recv(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
 
-	if (!result)
+	if (bufferSize && !result)
 		throw SocketException("The other side closed the connection (recv returned 0)");
 	checkReturn(static_cast<int>(result));
 
@@ -306,7 +316,7 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-std::string TLSSocket::setupContext()
+std::string TLSSocket::negotiate()
 {
 	//certmgr.msc - certificate store
 	#ifdef _WIN32
@@ -317,9 +327,10 @@ std::string TLSSocket::setupContext()
 	for (decltype(packageCount) i = 0; i < packageCount; ++i)
 		std::cout << packages[i].Name << std::endl;*/
 	constexpr const char *packageName = "Schannel";
-	std::string buffer, outputBuffer, extraData;
+	std::string inputBufferMemory, outputBufferMemory, extraData;
 	PSecPkgInfoA packageInfo;
-	decltype(packageInfo->cbMaxToken) maxMessage, toRead = 5;
+	constexpr decltype(packageInfo->cbMaxToken) initialBytesToRead = 16;
+	decltype(packageInfo->cbMaxToken) maxMessage, toRead = initialBytesToRead;
 	TimeStamp lifetime;
 	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
 	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext)*> certificate(nullptr, CertFreeCertificateContext);
@@ -347,70 +358,84 @@ std::string TLSSocket::setupContext()
 	maxMessage = packageInfo->cbMaxToken;
 	FreeContextBuffer(packageInfo);
 
-	buffer.resize(maxMessage, '\0');
-	outputBuffer.resize(maxMessage, '\0');
+	inputBufferMemory.resize(maxMessage);
+	outputBufferMemory.resize(maxMessage);
 
-	//AcceptAuthSocket
-	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>(packageName), SECPKG_CRED_BOTH, nullptr, &schannelCredential, nullptr, nullptr, &mCredentialsHandle, &lifetime));
+	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>(packageName), SECPKG_CRED_INBOUND, nullptr, &schannelCredential, nullptr, nullptr, &mCredentialsHandle, &lifetime));
 
 	do
 	{
-		SecBuffer InSecBuff[2];
-		SecBuffer OutSecBuff;
-		SecBufferDesc InBuffDesc = { SECBUFFER_VERSION, 2, InSecBuff };
-		SecBufferDesc OutBuffDesc = { SECBUFFER_VERSION, 1, &OutSecBuff };
+		SecBuffer inputBuffer[2];
+		SecBuffer outputBuffer;
+		SecBufferDesc inputBufferDescriptor = { SECBUFFER_VERSION, 2, inputBuffer };
+		SecBufferDesc outputBufferDescriptor = { SECBUFFER_VERSION, 1, &outputBuffer };
 
-		OutSecBuff.BufferType = SECBUFFER_TOKEN;
-		OutSecBuff.cbBuffer = maxMessage;
-		OutSecBuff.pvBuffer = outputBuffer.data();
-		InSecBuff[0].BufferType = SECBUFFER_TOKEN;
-		InSecBuff[0].pvBuffer = buffer.data();
-		InSecBuff[0].cbBuffer = bytesRead += Socket::receive(buffer.data() + bytesRead, toRead, 0);
-		InSecBuff[1].BufferType = SECBUFFER_EMPTY;
-		InSecBuff[1].pvBuffer = nullptr;
-		InSecBuff[1].cbBuffer = 0;
+		outputBuffer.BufferType = SECBUFFER_TOKEN;
+		outputBuffer.cbBuffer = maxMessage;
+		outputBuffer.pvBuffer = outputBufferMemory.data();
+		inputBuffer[0].BufferType = SECBUFFER_TOKEN;
+		inputBuffer[0].pvBuffer = inputBufferMemory.data();
+		inputBuffer[0].cbBuffer = bytesRead += Socket::receive(inputBufferMemory.data() + bytesRead, toRead, 0);
+		inputBuffer[1].BufferType = SECBUFFER_EMPTY;
+		inputBuffer[1].pvBuffer = nullptr;
+		inputBuffer[1].cbBuffer = 0;
 
-		result = AcceptSecurityContext(&mCredentialsHandle, newConversation ? nullptr : &mContextHandle, &InBuffDesc, Attribs, SECURITY_NATIVE_DREP, &mContextHandle, &OutBuffDesc, &Attribs, &lifetime);
+		result = AcceptSecurityContext(&mCredentialsHandle, newConversation ? nullptr : &mContextHandle, &inputBufferDescriptor, Attribs, 0, &mContextHandle, &outputBufferDescriptor, &Attribs, &lifetime);
 		
 		switch (result)
 		{
 			case SEC_I_COMPLETE_NEEDED:
 			case SEC_I_COMPLETE_AND_CONTINUE:
-				checkSSPIReturn(CompleteAuthToken(&mContextHandle, &OutBuffDesc));
+				checkSSPIReturn(CompleteAuthToken(&mContextHandle, &outputBufferDescriptor));
 				[[fallthrough]];
 			case SEC_E_OK:
-				if (OutSecBuff.BufferType == SECBUFFER_EXTRA)
-					extraData.append(static_cast<std::string::value_type*>(InSecBuff[0].pvBuffer) + InSecBuff[0].cbBuffer - InSecBuff[1].cbBuffer, InSecBuff[1].cbBuffer);
+				if (outputBuffer.BufferType == SECBUFFER_EXTRA)
+					extraData.append(static_cast<std::string::value_type*>(inputBuffer[0].pvBuffer) + inputBuffer[0].cbBuffer - inputBuffer[1].cbBuffer, inputBuffer[1].cbBuffer);
 				[[fallthrough]];
 			case SEC_I_CONTINUE_NEEDED:
 			{
-				if (OutSecBuff.BufferType == SECBUFFER_TOKEN)
+				if (inputBuffer[1].BufferType == SECBUFFER_EXTRA)
+				{
+					std::string extraBytes(static_cast<std::string::value_type*>(inputBuffer[0].pvBuffer) + inputBuffer[0].cbBuffer - inputBuffer[1].cbBuffer, inputBuffer[1].cbBuffer);
+					
+					bytesRead = extraBytes.size();
+					toRead = 0;
+					std::copy(extraBytes.begin(), extraBytes.end(), inputBufferMemory.begin());
+				}
+				else
+				{
+					toRead = initialBytesToRead;
+					bytesRead = 0;
+				}
+				
+				if (outputBuffer.BufferType == SECBUFFER_TOKEN)
 				{
 					std::int64_t bytesSent = 0;
-					while ((bytesSent += Socket::send(OutSecBuff.pvBuffer, OutSecBuff.cbBuffer - bytesSent, 0)) < OutSecBuff.cbBuffer);
-					toRead = 5;
-					bytesRead = 0;
+					while ((bytesSent += Socket::send(outputBuffer.pvBuffer, outputBuffer.cbBuffer - bytesSent, 0)) < outputBuffer.cbBuffer);
 				}
 
 				break;
 			}
 			case SEC_E_INCOMPLETE_MESSAGE:
-				if (InSecBuff[1].BufferType == SECBUFFER_MISSING)
-					toRead = InSecBuff[1].cbBuffer;
+				if (inputBuffer[1].BufferType == SECBUFFER_MISSING)
+					toRead = inputBuffer[1].cbBuffer;
 				break;
 			default:
 				checkSSPIReturn(result);
-				toRead = 5;
+				toRead = initialBytesToRead;
 				break;
 		}
 
 		newConversation = FALSE;
 	}
-	while ((result == SEC_I_CONTINUE_NEEDED) || (result == SEC_I_COMPLETE_AND_CONTINUE) || result == SEC_E_INCOMPLETE_MESSAGE);
-	//AcceptAuthSocket
+	while (result == SEC_I_CONTINUE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE || result == SEC_E_INCOMPLETE_MESSAGE);
 
+	SecPkgContext_Sizes sizes;
+	SecPkgContext_ConnectionInfo connInfo;
 	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes));
-	mContextSetup = true;
+	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_SIZES, &sizes));
+	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_CONNECTION_INFO, &connInfo));
+	mNegotiationCompleted = true;
 
 	return extraData;
 	#endif
@@ -421,7 +446,7 @@ TLSSocket::TLSSocket(TLSSocket &&other) noexcept
 	mCredentialsHandle(other.mCredentialsHandle),
 	mContextHandle(other.mContextHandle),
 	mStreamSizes(other.mStreamSizes),
-	mContextSetup(other.mContextSetup)
+	mNegotiationCompleted(other.mNegotiationCompleted)
 {
 	other.mCredentialsHandle = CredHandle {};
 	other.mContextHandle = SecHandle {};
@@ -441,7 +466,7 @@ TLSSocket& TLSSocket::operator=(TLSSocket &&other) noexcept
 	mContextHandle = other.mContextHandle;
 	other.mContextHandle = SecHandle{};
 	mStreamSizes = other.mStreamSizes;
-	mContextSetup = other.mContextSetup;
+	mNegotiationCompleted = other.mNegotiationCompleted;
 
 	return *this;
 }
@@ -465,57 +490,87 @@ std::string TLSSocket::receiveTLSMessage(int flags)
 	std::string result, extraData;
 
 	#ifdef _WIN32
-	if (!mContextSetup)
-		extraData = setupContext();
+	if (!mNegotiationCompleted)
+		extraData = negotiate();
 
-	if (mContextSetup)
+	std::string message(extraData);
+	SecBuffer buffer[4] = {};
+	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, buffer };
+	std::int64_t bytesRead = extraData.size(), toRead = mStreamSizes.cbHeader;
+	SECURITY_STATUS ret;
+	unsigned long fQop;
+
+	message.resize(message.size() + toRead);
+
+	do
 	{
-		std::string message(extraData);
-		SecBuffer buffer[4] = {};
-		SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, buffer };
-		std::int64_t bytesRead = extraData.size(), toRead = 5;
-		SECURITY_STATUS ret;
-		unsigned long fQop;
-
-		message.resize(message.size() + toRead, '\0');
-
-		do
+		if (buffer[1].BufferType == SECBUFFER_MISSING)
 		{
-			if (buffer[1].BufferType == SECBUFFER_MISSING)
-			{
-				toRead = buffer[1].cbBuffer;
-				message.resize(message.size() + toRead);
-			}
+			toRead = buffer[1].cbBuffer;
+			message.resize(message.size() + toRead);
+		}
 
-			bytesRead += Socket::receive(message.data() + bytesRead, toRead, 0);
+		bytesRead += Socket::receive(message.data() + bytesRead, toRead, 0);
 
-			buffer[0].pvBuffer = message.data();
-			buffer[0].cbBuffer = message.size();
-			buffer[0].BufferType = SECBUFFER_DATA;
+		buffer[0].pvBuffer = message.data();
+		buffer[0].cbBuffer = message.size();
+		buffer[0].BufferType = SECBUFFER_DATA;
 
-			for (int i = 1; i < sizeof(buffer) / sizeof(*buffer); ++i)
-			{
-				buffer[i].pvBuffer = nullptr;
-				buffer[i].cbBuffer = 0;
-				buffer[i].BufferType = SECBUFFER_EMPTY;
-			}
+		for (int i = 1; i < sizeof(buffer) / sizeof(*buffer); ++i)
+		{
+			buffer[i].pvBuffer = nullptr;
+			buffer[i].cbBuffer = 0;
+			buffer[i].BufferType = SECBUFFER_EMPTY;
+		}
 
-			ret = DecryptMessage(&mContextHandle, &descriptor, 0, &fQop);
-		} while (ret == SEC_E_INCOMPLETE_MESSAGE);
+		ret = DecryptMessage(&mContextHandle, &descriptor, 0, &fQop);
+	} while (ret == SEC_E_INCOMPLETE_MESSAGE);
 
-		checkSSPIReturn(ret);
+	checkSSPIReturn(ret);
 
-		result.append(static_cast<std::string::value_type*>(buffer[1].pvBuffer), buffer[1].cbBuffer);
-	}
+	result.append(static_cast<std::string::value_type*>(buffer[1].pvBuffer), buffer[1].cbBuffer);
 	#endif
 
 	return result;
 }
 
+std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
+{
+	#ifdef WIN32
+	std::string extraData;
+	SecBuffer messageBuffer[4] = {};
+	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, messageBuffer };
+	unsigned long fQop;
+
+	if (!mNegotiationCompleted)
+		extraData = negotiate();
+
+	std::copy(extraData.begin(), extraData.end(), static_cast<std::string::size_type*>(buffer));
+	messageBuffer[0].pvBuffer = buffer;
+	messageBuffer[0].cbBuffer = Socket::receive(static_cast<std::string::size_type*>(buffer) + extraData.size(), bufferSize - extraData.size(), flags) + extraData.size();
+	messageBuffer[0].BufferType = SECBUFFER_DATA;
+	
+	try {
+		checkSSPIReturn(DecryptMessage(&mContextHandle, &descriptor, 0, &fQop));
+	}
+	catch (SocketException &e)
+	{
+		if (e.getErrorCode() == SEC_E_INCOMPLETE_MESSAGE && messageBuffer[1].BufferType == SECBUFFER_MISSING)
+			e.setAdditionalInformation(messageBuffer[1].cbBuffer);
+
+		throw;
+	}
+
+	#endif
+
+	return bufferSize;
+}
+
 std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 {
-	if (!mContextSetup)
-		setupContext();
+	#ifdef WIN32
+	if (!mNegotiationCompleted)
+		negotiate();
 
 	SecBuffer secBuffer[4];
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, secBuffer };
@@ -547,6 +602,7 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 		for (int i = 0; i < sizeof(secBuffer) / sizeof(*secBuffer) - 1; ++i)
 			Socket::send(secBuffer[i].pvBuffer, secBuffer[i].cbBuffer, flags);
 	}
+	#endif
 
 	return bufferSize;
 }

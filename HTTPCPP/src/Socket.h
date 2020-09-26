@@ -5,6 +5,7 @@
 #include <memory>
 #include <functional>
 #include <stdexcept>
+#include <variant>
 
 #ifdef _WIN32
 #define SECURITY_WIN32
@@ -22,11 +23,17 @@ class WinsockLoader;
 
 class SocketException : public std::runtime_error
 {
-	int errorCode;
+public:
+	using AdditionalInformationType = std::variant<decltype(SecBuffer::cbBuffer)>;
+private:
+	int mErrorCode;
+	AdditionalInformationType mAdditionalInformation;
 public:
 	using std::runtime_error::runtime_error;
 	SocketException(int code);
 	int getErrorCode() const;
+	AdditionalInformationType getAdditionalInformation() const;
+	void setAdditionalInformation(const AdditionalInformationType &info);
 };
 
 class Socket
@@ -66,9 +73,9 @@ class TLSSocket : public Socket
 	CredHandle mCredentialsHandle = {};
 	SecHandle mContextHandle = {};
 	SecPkgContext_StreamSizes mStreamSizes = {};
-	bool mContextSetup = false;
+	bool mNegotiationCompleted = false;
 
-	std::string setupContext();
+	std::string negotiate();
 public:
 	using Socket::Socket;
 	TLSSocket(TLSSocket&&) noexcept;
@@ -77,6 +84,7 @@ public:
 
 	TLSSocket* accept() override;
 	std::string receiveTLSMessage(int flags);
+	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
 	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
 };
 
