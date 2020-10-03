@@ -53,6 +53,7 @@ namespace
 
 class Http::Server::Impl
 {
+public:
 	enum class ServerStatus : std::uint8_t { UNINITIALIZED = 1, RUNNING, STOPPED };
 	std::map<std::string, std::function<HandlerCallback>> mHandlers;
 	std::mutex mServerMutex; //to prevent data races between the thread that created the object and the thread that serves requests
@@ -70,14 +71,9 @@ class Http::Server::Impl
 	void serve(std::shared_ptr<Socket>, decltype(PollFileDescriptor::revents), ThreadPool&, SocketPoller&, std::unordered_map<std::shared_ptr<Socket>, SocketInfo>&, std::chrono::milliseconds);
 	void dispatch(std::unordered_map<std::shared_ptr<Socket>, SocketInfo>::iterator);
 	void handleRequest(std::shared_ptr<Socket>) const;
-public:
+
 	Impl(std::uint16_t, std::uint16_t, int, std::string_view, std::string_view);
 	~Impl();
-
-	void start();
-	void setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept;
-	void setErrorLogger(const std::function<LoggerCallback> &callback) noexcept;
-	void setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback);
 };
 
 void Http::Server::Impl::serverProcedure()
@@ -193,7 +189,7 @@ Http::Server::Impl::~Impl()
 		mSock->close();
 	if (mSockSecure)
 		mSockSecure->close();
-	if(mServerThread.joinable())
+	if (mServerThread.joinable())
 		mServerThread.join();
 }
 
@@ -282,33 +278,6 @@ Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int conne
 		mSockSecure->bind("0.0.0.0", mPortSecure, true);
 }
 
-void Http::Server::Impl::start()
-{
-	mServerThread = std::thread(&Impl::serverProcedure, this);
-	std::unique_lock<std::mutex> lck(mServerMutex);
-
-	mStatusChanged.wait(lck, [this]() -> bool { return mStatus.load() != ServerStatus::UNINITIALIZED; });
-
-	if (mStatus.load() != ServerStatus::RUNNING) {
-		throw std::runtime_error("Could not start server");
-	}
-}
-
-void Http::Server::Impl::setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept
-{
-	mEndpointLogger = (callback ? callback : placeholderLogger);
-}
-
-void Http::Server::Impl::setErrorLogger(const std::function<LoggerCallback>& callback) noexcept
-{
-	mErrorLogger = (callback ? callback : placeholderLogger);
-}
-
-void Http::Server::Impl::setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback)
-{
-	mHandlers[path.data()] = callback;
-}
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -342,20 +311,26 @@ Http::Server& Http::Server::operator=(Server &&other) noexcept
 
 void Http::Server::start()
 {
-	mThis->start();
+	mThis->mServerThread = std::thread(&Impl::serverProcedure, mThis);
+	std::unique_lock<std::mutex> lck(mThis->mServerMutex);
+
+	mThis->mStatusChanged.wait(lck, [this]() -> bool { return mThis->mStatus.load() != Impl::ServerStatus::UNINITIALIZED; });
+
+	if (mThis->mStatus.load() != Impl::ServerStatus::RUNNING)
+		throw std::runtime_error("Could not start server");
 }
 
 void Http::Server::setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept
 {
-	mThis->setEndpointLogger(callback);
+	mThis->mEndpointLogger = callback ? callback : placeholderLogger;
 }
 
-void Http::Server::setErrorLogger(const std::function<LoggerCallback>& callback) noexcept
+void Http::Server::setErrorLogger(const std::function<LoggerCallback> &callback) noexcept
 {
-	mThis->setErrorLogger(callback);
+	mThis->mErrorLogger = callback ? callback : placeholderLogger;
 }
 
 void Http::Server::setResourceCallback(const std::string_view &path, const std::function<HandlerCallback> &callback)
 {
-	mThis->setResourceCallback(path, callback);
+	mThis->mHandlers[path.data()] = callback;
 }
