@@ -24,6 +24,7 @@ inline void Sleep(size_t miliseconds)
 
 class Http::Request::Impl
 {
+public:
 	static std::regex requestHeaderFormat, requestLineFormat, queryStringFormat, queryStringParams;
 	std::string mMethod;
 	std::string mResource;
@@ -35,17 +36,7 @@ class Http::Request::Impl
 
 	static const char* getFieldText(HeaderField field);
 	HeaderField getFieldId(const std::string_view &field);
-public:
 	Impl(const std::shared_ptr<Socket> &mSock);
-
-	std::string_view getMethod();
-	std::string_view getResourcePath();
-	std::string_view getVersion();
-	std::optional<std::string_view> getField(HeaderField field);
-	std::optional<std::string_view> getField(std::string_view field);
-	std::optional<std::string_view> getRequestStringValue(std::string_view);
-	std::vector<std::string_view> getRequestStringKeys();
-	const decltype(mBody)& getBody();
 };
 
 //[1]: header field
@@ -319,68 +310,6 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 		}
 	}
 }
-
-std::string_view Http::Request::Impl::getMethod()
-{
-	return mMethod;
-}
-
-std::string_view Http::Request::Impl::getResourcePath()
-{
-	return mResource;
-}
-
-std::string_view Http::Request::Impl::getVersion()
-{
-	return mVersion;
-}
-
-std::optional<std::string_view> Http::Request::Impl::getField(HeaderField field)
-{
-	try {
-		return mFields.at(getFieldText(field));
-	}
-	catch (const std::out_of_range&) {
-		return std::optional<std::string_view>();
-	}
-}
-
-std::optional<std::string_view> Http::Request::Impl::getField(std::string_view field)
-{
-	try {
-		return mFields.at(field.data());
-	}
-	catch (const std::out_of_range&) {
-		return std::optional<std::string_view>();
-	}
-}
-
-std::optional<std::string_view> Http::Request::Impl::getRequestStringValue(std::string_view key)
-{
-	try {
-		return queryStringArguments.at(key.data());
-	}
-	catch (const std::out_of_range&) {
-		return std::optional<std::string_view>();
-	}
-}
-
-std::vector<std::string_view> Http::Request::Impl::getRequestStringKeys()
-{
-	std::vector<std::string_view> result;
-	result.reserve(queryStringArguments.size());
-
-	for (const decltype(queryStringArguments)::value_type &pair : queryStringArguments) {
-		result.push_back(pair.first);
-	}
-
-	return result;
-}
-
-const decltype(Http::Request::Impl::mBody)& Http::Request::Impl::getBody()
-{
-	return mBody;
-}
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -414,40 +343,61 @@ Http::Request& Http::Request::operator=(Request &&other) noexcept
 
 std::string_view Http::Request::getMethod()
 {
-	return mThis->getMethod();
+	return mThis->mMethod;
 }
 
 std::string_view Http::Request::getResourcePath()
 {
-	return mThis->getResourcePath();
+	return mThis->mResource;
 }
 
 std::string_view Http::Request::getVersion()
 {
-	return mThis->getVersion();
+	return mThis->mVersion;
 }
 
 std::optional<std::string_view> Http::Request::getField(HeaderField field)
 {
-	return mThis->getField(field);
+	try {
+		return mThis->mFields.at(mThis->getFieldText(field));
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 std::optional<std::string_view> Http::Request::getField(std::string_view field)
 {
-	return mThis->getField(field);
+	try {
+		return mThis->mFields.at(field.data());
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 std::optional<std::string_view> Http::Request::getRequestStringValue(std::string_view key)
 {
-	return mThis->getRequestStringValue(key);
+	try {
+		return mThis->queryStringArguments.at(key.data());
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 std::vector<std::string_view> Http::Request::getRequestStringKeys()
 {
-	return mThis->getRequestStringKeys();
+	std::vector<std::string_view> result;
+
+	result.reserve(mThis->queryStringArguments.size());
+	for (const decltype(mThis->queryStringArguments)::value_type &pair : mThis->queryStringArguments)
+		result.push_back(pair.first);
+
+	return result;
 }
 
 const std::vector<std::uint8_t>& Http::Request::getBody()
 {
-	return mThis->getBody();
+	return mThis->mBody;
 }
