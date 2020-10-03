@@ -14,6 +14,7 @@
 
 class Http::Response::Impl
 {
+public:
 	std::map<std::string, std::string, decltype(CaseInsensitiveComparator)*> mFields;
 	std::string mVersion;
 	std::vector<uint8_t> mBody;
@@ -21,19 +22,7 @@ class Http::Response::Impl
 	std::uint16_t mStatusCode;
 
 	static const char* getFieldText(HeaderField field);
-public:
 	Impl(const std::shared_ptr<Socket>&);
-
-	void setBody(const decltype(mBody)&);
-	void setBody(std::string_view);
-	void setStatusCode(std::uint16_t);
-	void setField(HeaderField field, std::string_view value);
-	void setField(std::string_view field, std::string_view value);
-	std::optional<std::string_view> getField(HeaderField);
-	std::optional<std::string_view> getField(std::string_view);
-	void sendHeaders();
-	void sendBytes(const std::vector<std::uint8_t> &bytes);
-	void send();
 };
 
 const char* Http::Response::Impl::getFieldText(HeaderField field)
@@ -145,122 +134,6 @@ Http::Response::Impl::Impl(const std::shared_ptr<Socket> &sock)
 {
 }
 
-void Http::Response::Impl::setBody(const decltype(mBody) &newBody)
-{
-	mBody = newBody;
-}
-
-void Http::Response::Impl::setBody(std::string_view body)
-{
-	mBody = decltype(mBody)(body.begin(), body.end());
-}
-
-void Http::Response::Impl::setStatusCode(std::uint16_t code)
-{
-	mStatusCode = code;
-}
-
-void Http::Response::Impl::setField(HeaderField field, std::string_view value)
-{
-	mFields[getFieldText(field)] = value;
-}
-
-void Http::Response::Impl::setField(std::string_view field, std::string_view value)
-{
-	mFields[field.data()] = value;
-}
-
-std::optional<std::string_view> Http::Response::Impl::getField(Http::Response::HeaderField field)
-{
-	try {
-		return mFields.at(getFieldText(field));
-	}
-	catch (const std::out_of_range&) {
-		return std::optional<std::string_view>();
-	}
-}
-
-std::optional<std::string_view> Http::Response::Impl::getField(std::string_view field)
-{
-	try {
-		return mFields.at(field.data());
-	}
-	catch (const std::out_of_range&) {
-		return std::optional<std::string_view>();
-	}
-}
-
-void Http::Response::Impl::sendHeaders()
-{
-	if (!mStatusCode)
-		throw ResponseException("No status code set");
-	constexpr const char *fieldEnd = "\r\n";
-	std::string response = "HTTP/" + mVersion + ' ' + std::to_string(mStatusCode) + fieldEnd;
-	std::int64_t bytesSent = 0;
-
-	for (const auto &fieldValue : mFields) {
-		response += fieldValue.first;
-		response += ": ";
-		response += fieldValue.second;
-		response += fieldEnd;
-	}
-
-	response += fieldEnd;
-
-	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
-	{
-		decltype(bytesSent) auxBytesSent = mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
-
-		if (auxBytesSent > 0)
-			bytesSent += auxBytesSent;
-		else {
-			#ifdef _WIN32
-			LPSTR message;
-			FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
-			std::string strMsg(message);
-			LocalFree(message);
-			throw ResponseException(strMsg);
-			#elif defined(__linux__)
-			throw ResponseException(std::strerror(errno));
-			#endif
-		}
-	}
-}
-
-void Http::Response::Impl::sendBytes(const std::vector<std::uint8_t> &bytes)
-{
-	std::int64_t bytesSent = 0;
-
-	while (bytesSent < static_cast<decltype(bytesSent)>(bytes.size()))
-		bytesSent += mSock->send(const_cast<std::uint8_t*>(bytes.data()) + bytesSent, bytes.size() - bytesSent, 0);
-}
-
-void Http::Response::Impl::send()
-{
-	if (!mStatusCode)
-		throw ResponseException("No status code set");
-
-	constexpr const char *fieldEnd = "\r\n";
-
-	std::int64_t bytesSent = 0;
-
-	std::string response = "HTTP/" + mVersion + ' ' + std::to_string(mStatusCode) + fieldEnd;
-
-	for (const auto &fieldValue : mFields) {
-		response += fieldValue.first;
-		response += ": ";
-		response += fieldValue.second;
-		response += fieldEnd;
-	}
-
-	response += fieldEnd;
-
-	response.insert(response.end(), mBody.begin(), mBody.end());
-
-	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
-		bytesSent += mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
-}
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -292,52 +165,118 @@ Http::Response& Http::Response::operator=(Response &&other) noexcept
 	return *this;
 }
 
-void Http::Response::setBody(const std::vector<std::uint8_t> &mBody)
+void Http::Response::setBody(const std::vector<std::uint8_t> &newBody)
 {
-	mThis->setBody(mBody);
+	mThis->mBody = newBody;
 }
 
-void Http::Response::setBody(std::string_view mBody)
+void Http::Response::setBody(std::string_view body)
 {
-	mThis->setBody(mBody);
+	mThis->mBody = decltype(Impl::mBody)(body.begin(), body.end());
 }
 
 void Http::Response::setStatusCode(std::uint16_t code)
 {
-	mThis->setStatusCode(code);
+	mThis->mStatusCode = code;
 }
 
 void Http::Response::setField(HeaderField field, std::string_view value)
 {
-	mThis->setField(field, value);
+	mThis->mFields[mThis->getFieldText(field)] = value;
 }
 
 void Http::Response::setField(std::string_view field, std::string_view value)
 {
-	mThis->setField(field, value);
+	mThis->mFields[field.data()] = value;
 }
 
 std::optional<std::string_view> Http::Response::getField(HeaderField field)
 {
-	return mThis->getField(field);
+	try {
+		return mThis->mFields.at(mThis->getFieldText(field));
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 std::optional<std::string_view> Http::Response::getField(std::string_view field)
 {
-	return mThis->getField(field);
+	try {
+		return mThis->mFields.at(field.data());
+	}
+	catch (const std::out_of_range&) {
+		return std::optional<std::string_view>();
+	}
 }
 
 void Http::Response::sendHeaders()
 {
-	mThis->sendHeaders();
+	if (!mThis->mStatusCode)
+		throw ResponseException("No status code set");
+	constexpr const char *fieldEnd = "\r\n";
+	std::string response = "HTTP/" + mThis->mVersion + ' ' + std::to_string(mThis->mStatusCode) + fieldEnd;
+	std::int64_t bytesSent = 0;
+
+	for (const auto &fieldValue : mThis->mFields) {
+		response += fieldValue.first;
+		response += ": ";
+		response += fieldValue.second;
+		response += fieldEnd;
+	}
+
+	response += fieldEnd;
+
+	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
+	{
+		decltype(bytesSent) auxBytesSent = mThis->mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
+
+		if (auxBytesSent > 0)
+			bytesSent += auxBytesSent;
+		else {
+			#ifdef _WIN32
+			LPSTR message;
+			FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
+			std::string strMsg(message);
+			LocalFree(message);
+			throw ResponseException(strMsg);
+			#elif defined(__linux__)
+			throw ResponseException(std::strerror(errno));
+			#endif
+		}
+	}
 }
 
 void Http::Response::sendBytes(const std::vector<std::uint8_t> &bytes)
 {
-	mThis->sendBytes(bytes);
+	std::int64_t bytesSent = 0;
+
+	while (bytesSent < static_cast<decltype(bytesSent)>(bytes.size()))
+		bytesSent += mThis->mSock->send(const_cast<std::uint8_t*>(bytes.data()) + bytesSent, bytes.size() - bytesSent, 0);
 }
 
 void Http::Response::send()
 {
-	mThis->send();
+	if (!mThis->mStatusCode)
+		throw ResponseException("No status code set");
+
+	constexpr const char *fieldEnd = "\r\n";
+
+	std::int64_t bytesSent = 0;
+
+	std::string response = "HTTP/" + mThis->mVersion + ' ' + std::to_string(mThis->mStatusCode) + fieldEnd;
+
+	for (const auto &fieldValue : mThis->mFields) {
+		response += fieldValue.first;
+		response += ": ";
+		response += fieldValue.second;
+		response += fieldEnd;
+	}
+
+	response += fieldEnd;
+
+	response.insert(response.end(), mThis->mBody.begin(), mThis->mBody.end());
+
+	while (bytesSent < static_cast<decltype(bytesSent)>(response.size()))
+		bytesSent += mThis->mSock->send(response.data() + bytesSent, response.size() - bytesSent, 0);
 }
