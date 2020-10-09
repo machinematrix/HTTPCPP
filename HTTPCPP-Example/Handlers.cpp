@@ -186,7 +186,7 @@ void video(Request &req, Response &resp) //?name=<video file name>
 			}
 		}
 		else {
-			size_t sent = 0, fileSize = getFileSize(name.value());
+			std::uint64_t sent = 0ull, fileSize = getFileSize(name.value());
 
 			resp.setStatusCode(200);
 			resp.setField(Response::HeaderField::ContentLength, std::to_string(fileSize));
