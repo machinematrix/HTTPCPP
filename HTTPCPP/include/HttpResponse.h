@@ -16,7 +16,7 @@ namespace Http
 		Impl *mThis;
 	public:
 		enum class HeaderField;
-		Response(const std::shared_ptr<Socket>&);
+		Response(std::shared_ptr<Socket>);
 		~Response() noexcept;
 		Response(Response&&) noexcept;
 		Response& operator=(Response&&) noexcept;

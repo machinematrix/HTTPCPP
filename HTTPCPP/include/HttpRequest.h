@@ -18,7 +18,7 @@ namespace Http
 	public:
 		enum class HeaderField : std::size_t;
 
-		Request(const std::shared_ptr<Socket>&);
+		Request(std::shared_ptr<Socket>);
 		~Request() noexcept;
 		Request(Request&&) noexcept;
 		Request& operator=(Request&&) noexcept;

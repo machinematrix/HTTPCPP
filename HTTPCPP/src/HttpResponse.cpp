@@ -22,7 +22,7 @@ public:
 	std::uint16_t mStatusCode;
 
 	static const char* getFieldText(HeaderField field);
-	Impl(const std::shared_ptr<Socket>&);
+	Impl(std::shared_ptr<Socket>);
 };
 
 const char* Http::Response::Impl::getFieldText(HeaderField field)
@@ -126,7 +126,7 @@ const char* Http::Response::Impl::getFieldText(HeaderField field)
 	}
 }
 
-Http::Response::Impl::Impl(const std::shared_ptr<Socket> &sock)
+Http::Response::Impl::Impl(std::shared_ptr<Socket> sock)
 	:mSock(sock)
 	,mStatusCode(0)
 	,mVersion("1.1")
@@ -141,7 +141,7 @@ Http::Response::Impl::Impl(const std::shared_ptr<Socket> &sock)
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Response::Response(const std::shared_ptr<Socket> &wrapper)
+Http::Response::Response(std::shared_ptr<Socket> wrapper)
 	:mThis(new Impl(wrapper))
 {}
 

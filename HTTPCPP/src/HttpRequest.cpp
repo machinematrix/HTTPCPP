@@ -36,7 +36,7 @@ public:
 
 	static const char* getFieldText(HeaderField field);
 	HeaderField getFieldId(const std::string_view &field);
-	Impl(const std::shared_ptr<Socket> &mSock);
+	Impl(std::shared_ptr<Socket> mSock);
 };
 
 //[1]: header field
@@ -197,7 +197,7 @@ Http::Request::HeaderField Http::Request::Impl::getFieldId(const std::string_vie
 	return result;
 }
 
-Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
+Http::Request::Impl::Impl(std::shared_ptr<Socket> sockWrapper)
 	:mSock(sockWrapper),
 	mFields(CaseInsensitiveComparator)
 {
@@ -317,7 +317,7 @@ Http::Request::Impl::Impl(const std::shared_ptr<Socket> &sockWrapper)
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Http::Request::Request(const std::shared_ptr<Socket> &sockWrapper)
+Http::Request::Request(std::shared_ptr<Socket> sockWrapper)
 	:mThis(new Impl(sockWrapper))
 {}
 
