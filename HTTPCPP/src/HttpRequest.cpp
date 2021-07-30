@@ -221,39 +221,22 @@ Http::Request::Impl::Impl(std::shared_ptr<Socket> sockWrapper)
 	array<string::value_type, 1024> buffer;
 	string::size_type headerEnd = string::npos;
 	std::smatch requestLineMatch, queryStringMatch;
-	TLSSocket *tlsSocket = dynamic_cast<TLSSocket*>(mSock.get());
 	
-	if (tlsSocket)
+	do
 	{
-		do
-		{
-			auto aux = tlsSocket->receiveTLSMessage(flags);
+		auto aux = mSock->receive(flags);
 
-			if (aux.empty())
-			{
-				if (headerEnd == std::string::npos)
-					throw RequestException("Invalid request");
-			}
-			else
-			{
-				requestText += aux;
-				headerEnd = requestText.find("\r\n\r\n");
-			}
-		} while (headerEnd == string::npos);
-	}
-	else
-	{		
-		do
+		if (aux.empty())
 		{
-			auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
-
-			if (bytesRead > 0)
-			{
-				requestText.append(buffer.data(), bytesRead);
-				headerEnd = requestText.find("\r\n\r\n");
-			}
-		} while (headerEnd == string::npos);
-	}
+			if (headerEnd == std::string::npos)
+				throw RequestException("Invalid request");
+		}
+		else
+		{
+			requestText += aux;
+			headerEnd = requestText.find("\r\n\r\n"); //header end could be split between aux and requestText, so I can't just find it in aux
+		}
+	} while (headerEnd == string::npos);
 
 	if (headerEnd == string::npos)
 		throw RequestException("Header doesn't end");
@@ -294,19 +277,9 @@ Http::Request::Impl::Impl(std::shared_ptr<Socket> sockWrapper)
 
 		while (mBody.size() < contentLength)
 		{
-			if (tlsSocket)
-			{
-				auto aux = tlsSocket->receiveTLSMessage(flags);
+			auto aux = mSock->receive(flags);
 
-				mBody.insert(mBody.end(), aux.begin(), aux.end());
-			}
-			else
-			{
-				auto bytesRead = mSock->receive(buffer.data(), buffer.size(), flags);
-
-				if (bytesRead > 0)
-					mBody.insert(mBody.end(), buffer.begin(), buffer.begin() + bytesRead);
-			}
+			mBody.insert(mBody.end(), aux.begin(), aux.end());
 		}
 	}
 }

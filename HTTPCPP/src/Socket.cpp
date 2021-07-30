@@ -291,6 +291,14 @@ Socket* Socket::accept()
 		#endif
 }
 
+std::string Socket::receive(int flags)
+{
+	std::string buffer(1024, '\0');
+
+	receive(buffer.data(), buffer.size(), flags);
+	return buffer;
+}
+
 std::int64_t Socket::receive(void *buffer, size_t bufferSize, int flags)
 {
 	std::int64_t result = recv(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
@@ -501,7 +509,7 @@ TLSSocket* TLSSocket::accept()
 	#endif
 }
 
-std::string TLSSocket::receiveTLSMessage(int flags)
+std::string TLSSocket::receive(int flags)
 {
 	std::string result, extraData;
 

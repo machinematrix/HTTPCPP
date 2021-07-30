@@ -64,6 +64,7 @@ public:
 	bool isNonBlocking();
 	void setSocketOption(int level, int optionName, const void *optionValue, int optionLength);
 	virtual Socket* accept();
+	virtual std::string receive(int flags);
 	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
 	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
 };
@@ -85,7 +86,7 @@ public:
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
-	std::string receiveTLSMessage(int flags);
+	std::string receive(int flags);
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
 	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
 };
