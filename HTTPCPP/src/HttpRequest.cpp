@@ -207,18 +207,14 @@ Http::Request::Impl::Impl(std::shared_ptr<Socket> sockWrapper)
 
 	#ifdef _WIN32
 	int flags = 0;
-	DWORD timeout = 10000;
 	//mSock->toggleNonBlockingMode(false);
 	//NonBlockingSocket nonBlocking(*mSock);
-	mSock->setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-	mSock->setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 	#elif defined(__linux__)
 	int flags = MSG_DONTWAIT;
 	#endif
 
 	unsigned contentLength;
 	string requestText;
-	array<string::value_type, 1024> buffer;
 	string::size_type headerEnd = string::npos;
 	std::smatch requestLineMatch, queryStringMatch;
 	

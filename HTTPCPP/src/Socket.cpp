@@ -68,45 +68,6 @@ namespace
 	#endif
 }
 
-//calls WSAStartup on construction and WSACleanup on destruction
-class WinsockLoader
-{
-	static void startup()
-	{
-		#ifdef _WIN32
-		WSADATA wsaData;
-		if (auto ret = WSAStartup(MAKEWORD(2, 2), &wsaData))
-			throw SocketException(ret);
-		#endif
-	}
-public:
-	WinsockLoader()
-	{
-		startup();
-	}
-
-	~WinsockLoader()
-	{
-		#ifdef _WIN32
-		WSACleanup();
-		#endif
-	}
-
-	WinsockLoader(const WinsockLoader&)
-		:WinsockLoader() //delegating constructor
-	{}
-
-	WinsockLoader(WinsockLoader&&) noexcept = default;
-
-	WinsockLoader& operator=(const WinsockLoader&)
-	{
-		startup();
-		return *this;
-	}
-
-	WinsockLoader& operator=(WinsockLoader&&) noexcept = default;
-};
-
 SocketException::SocketException(int code)
 	:std::runtime_error(formatMessage(code)),
 	mErrorCode(code)
@@ -128,8 +89,7 @@ void SocketException::setAdditionalInformation(const AdditionalInformationType &
 }
 
 Socket::Socket(DescriptorType sock)
-	:loader(new WinsockLoader),
-	mSock(sock),
+	:mSock(sock),
 	mDomain(0),
 	mType(0),
 	mProtocol(0)
@@ -157,8 +117,7 @@ Socket::Socket(DescriptorType sock)
 }
 
 Socket::Socket(int domain, int type, int protocol)
-	:loader(new WinsockLoader),
-	mSock(socket(domain, type, protocol)),
+	:mSock(socket(domain, type, protocol)),
 	mDomain(domain),
 	mType(type),
 	mProtocol(protocol)
@@ -185,7 +144,7 @@ Socket::Socket(int domain, int type, int protocol)
 
 Socket::Socket(Socket &&other) noexcept
 	:mSock(other.mSock),
-	loader(std::move(other.loader)),
+	mLoader(std::move(other.mLoader)),
 	mDomain(other.mDomain),
 	mType(other.mType),
 	mProtocol(other.mProtocol)
@@ -201,7 +160,7 @@ Socket::~Socket()
 Socket& Socket::operator=(Socket &&other) noexcept
 {
 	mSock = other.mSock;
-	loader = std::move(other.loader);
+	mLoader = std::move(other.mLoader);
 	other.mSock = INVALID_SOCKET;
 	mDomain = other.mDomain;
 	mType = other.mType;
@@ -317,6 +276,11 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 	checkReturn(static_cast<int>(result));
 
 	return result;
+}
+
+DescriptorType Socket::get()
+{
+	return mSock;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -649,64 +613,4 @@ bool operator==(const Socket &lhs, const Socket &rhs) noexcept
 bool operator<(const Socket &lhs, const Socket &rhs) noexcept
 {
 	return lhs.mSock < rhs.mSock;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-NonBlockingSocket::NonBlockingSocket(Socket &socket)
-	:mSocket(socket),
-	oldState(mSocket.isNonBlocking())
-{
-	mSocket.toggleNonBlockingMode(true);
-}
-
-NonBlockingSocket::~NonBlockingSocket()
-{
-	mSocket.toggleNonBlockingMode(oldState);
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-SocketPoller::SocketPoller(SocketPoller&&) noexcept = default;
-
-SocketPoller& SocketPoller::operator=(SocketPoller&&) noexcept = default;
-
-void SocketPoller::addSocket(decltype(mSockets)::value_type socket, decltype(PollFileDescriptor::events) events)
-{
-	mSockets.emplace_back(socket);
-	mPollFdList.push_back({ socket->mSock, events });
-}
-
-void SocketPoller::removeSocket(const decltype(mSockets)::value_type::element_type &socket)
-{
-	auto descriptor = socket.mSock;
-	auto socketIt = std::find_if(mSockets.begin(), mSockets.end(), [&socket](const decltype(mSockets)::value_type &ptr) -> bool { return *ptr == socket; });
-	auto entryIt = std::find_if(mPollFdList.begin(), mPollFdList.end(), [descriptor](const PollFileDescriptor &pollEntry) -> bool { return descriptor == pollEntry.fd; });
-
-	if (socketIt != mSockets.end() && entryIt != mPollFdList.end())
-	{
-		mSockets.erase(socketIt);
-		mPollFdList.erase(entryIt);
-	}
-	else
-		throw std::out_of_range("Socket not found");
-}
-
-void SocketPoller::poll(int timeout, std::function<void(decltype(mSockets)::value_type, decltype(PollFileDescriptor::revents))> callback)
-{
-	#ifdef _WIN32
-	int result = WSAPoll(mPollFdList.data(), static_cast<ULONG>(mPollFdList.size()), timeout);
-	#elif defined (__linux__)
-	int result = ::poll(mPollFdList.data(), mPollFdList.size(), timeout);
-	#endif
-
-	if (!mSockets.empty() && !mPollFdList.empty())
-		for (std::int64_t i = static_cast<std::int64_t>(mPollFdList.size() - 1); i >= 0; --i)
-			callback(mSockets[i], mPollFdList[i].revents);
 }
