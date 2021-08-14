@@ -239,10 +239,8 @@ Http::Server::~Server() noexcept
 }
 
 Http::Server::Server(Server &&other) noexcept
-	:mThis(other.mThis)
-{
-	other.mThis = nullptr;
-}
+	:mThis(std::exchange(other.mThis, nullptr))
+{}
 
 Http::Server& Http::Server::operator=(Server &&other) noexcept
 {
