@@ -82,7 +82,7 @@ void Http::Server::Impl::serverProcedure()
 
 	while (mStatus.load() == ServerStatus::RUNNING)
 	{
-		if (auto returnValue = WSAPoll(descriptorList.data(), static_cast<ULONG>(descriptorList.size()), 1000); returnValue != SOCKET_ERROR) //add return value check later!
+		if (auto returnValue = WSAPoll(descriptorList.data(), static_cast<ULONG>(descriptorList.size()), 1000); returnValue != SOCKET_ERROR)
 		{
 			for (auto &entry : socketList)
 				if (descriptorList[entry.second].revents & POLLIN)
