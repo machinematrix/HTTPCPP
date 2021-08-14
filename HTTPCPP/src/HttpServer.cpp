@@ -63,7 +63,7 @@ void Http::Server::Impl::serverProcedure()
 		mStatus.store(ServerStatus::STOPPED);
 	}
 
-	//ThreadPool pool(static_cast<size_t>(std::thread::hardware_concurrency()) * 2ull);
+	ThreadPool pool(static_cast<size_t>(std::thread::hardware_concurrency()) * 2ull);
 	mStatusChanged.notify_all();
 	std::vector<PollFileDescriptor> descriptorList;
 	std::vector<std::pair<std::shared_ptr<Socket>, decltype(descriptorList)::size_type>> socketList;
@@ -86,7 +86,8 @@ void Http::Server::Impl::serverProcedure()
 		{
 			for (auto &entry : socketList)
 				if (descriptorList[entry.second].revents & POLLIN)
-					std::thread(&Impl::handleRequest, this, std::shared_ptr<Socket>(entry.first->accept())).detach();
+					pool.addTask(std::bind(&Impl::handleRequest, this, std::shared_ptr<Socket>(entry.first->accept())));
+					//std::thread(&Impl::handleRequest, this, std::shared_ptr<Socket>(entry.first->accept())).detach();
 		}
 		else
 		{
