@@ -95,6 +95,8 @@ void Http::Server::Impl::serverProcedure()
 			mErrorLogger("poll error code " + std::to_string(returnValue) + ", server stopped");
 		}
 	}
+
+	pool.waitForTasks();
 }
 
 Http::Server::Impl::~Impl()
