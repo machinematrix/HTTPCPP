@@ -41,19 +41,6 @@ std::vector<std::string> getFilesWithExtension(std::string_view directory, std::
 	return result;
 }
 
-std::streampos getFileSize(const std::string_view &fileName)
-{
-	std::streampos result = 0;
-	std::ifstream file(fileName.data(), std::ios::binary | std::ios::ate);
-
-	if (file.is_open())
-	{
-		result = file.tellg();
-	}
-
-	return result;
-}
-
 //STREAM MUST BE OPEN IN BINARY MODE
 std::streampos getFileSize(std::ifstream &file)
 {
@@ -73,7 +60,7 @@ std::streampos getFileSize(std::ifstream &file)
 std::vector<std::uint8_t> loadFile(const std::string_view &fileName)
 {
 	std::vector<std::uint8_t> result;
-	std::streampos size = getFileSize(fileName);
+	size_t size = std::filesystem::directory_entry{ fileName }.file_size();
 	std::ifstream file(fileName.data(), std::ios::binary);
 
 	if (file.is_open())
