@@ -192,7 +192,7 @@ void video(Request &req, Response &resp) //?name=<video file name>
 		static std::regex rangeFormat("bytes=([[:digit:]]+)-([[:digit:]]*)");
 		std::cmatch results;
 		std::vector<std::uint8_t> chunk;
-		std::size_t rangeBegin = 0, rangeEnd = 0, fileSize = std::filesystem::directory_entry{ convertedName }.file_size();
+		std::uint64_t rangeBegin = 0, rangeEnd = 0, fileSize = std::filesystem::directory_entry{ convertedName }.file_size();
 		auto range = req.getField(Request::HeaderField::Range);
 
 		resp.setField(Response::HeaderField::ContentType, "video/mp4");
@@ -204,7 +204,7 @@ void video(Request &req, Response &resp) //?name=<video file name>
 		if (range && std::regex_match(range.value().data(), results, rangeFormat))
 		{
 			rangeBegin = std::stoull(results[1]);
-			rangeEnd = (results[2].str().empty() ? std::min<decltype(chunk)::size_type>(rangeBegin + 1024 * 1024, fileSize) : std::stoull(results[2]));
+			rangeEnd = (results[2].str().empty() ? std::min(rangeBegin + 1024 * 1024, fileSize) : std::stoull(results[2]));
 
 			if (rangeBegin < rangeEnd && rangeEnd <= fileSize)
 			{
@@ -228,7 +228,7 @@ void video(Request &req, Response &resp) //?name=<video file name>
 
 			while (sent < fileSize)
 			{
-				chunk = loadFile(convertedName, sent, std::min(fileSize, sent + 1024ull * 1024ull * 4ull));
+				chunk = loadFile(convertedName, sent, std::min(fileSize, sent + 1024 * 1024 * 4));
 				resp.sendBytes(chunk);
 				sent += chunk.size();
 			}

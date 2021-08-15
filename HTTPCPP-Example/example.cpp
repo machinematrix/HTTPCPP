@@ -16,7 +16,8 @@ std::vector<std::string> filenames(const std::string_view &directory)
 	std::vector<std::string> result;
 	directory_iterator iterator(directory), end;
 
-	while (iterator != end) {
+	while (iterator != end)
+	{
 		result.push_back(iterator->path().filename().string());
 		++iterator;
 	}
@@ -44,11 +45,11 @@ std::vector<std::string> getFilesWithExtension(std::string_view directory, std::
 std::vector<std::uint8_t> loadFile(const std::string_view &fileName)
 {
 	std::vector<std::uint8_t> result;
-	size_t size = std::filesystem::directory_entry{ fileName }.file_size();
 	std::ifstream file(fileName.data(), std::ios::binary);
 
 	if (file.is_open())
 	{
+		size_t size = std::filesystem::directory_entry{ fileName }.file_size();
 		std::streamsize bytesRead = 0;
 		result.resize(size);
 
@@ -102,7 +103,8 @@ int main()
 	using std::endl;
 	using std::cin;
 
-	try {
+	try
+	{
 		std::string input;
 		Http::Server sv(80, 443, 50, "MY", "localhost"); //You'll need a server authentication certificate named 'localhost' in the personal certificate store for this to work.
 
@@ -129,7 +131,8 @@ int main()
 			}
 		} while (input != "exit" && cin);
 	}
-	catch (const std::runtime_error &e) {
+	catch (const std::runtime_error &e)
+	{
 		cout << e.what() << endl;
 	}
 
