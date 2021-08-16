@@ -299,7 +299,8 @@ std::string TLSSocket::negotiate()
 	for (decltype(packageCount) i = 0; i < packageCount; ++i)
 		std::cout << packages[i].Name << std::endl;*/
 	constexpr const char *packageName = "Schannel";
-	std::string inputBufferMemory, outputBufferMemory, extraData;
+	std::unique_ptr<std::byte[]> inputBufferMemory, outputBufferMemory;
+	std::string extraData;
 	PSecPkgInfoA packageInfo;
 	constexpr decltype(packageInfo->cbMaxToken) initialBytesToRead = 16;
 	decltype(packageInfo->cbMaxToken) maxMessage, toRead = initialBytesToRead;
@@ -330,8 +331,8 @@ std::string TLSSocket::negotiate()
 	maxMessage = packageInfo->cbMaxToken;
 	FreeContextBuffer(packageInfo);
 
-	inputBufferMemory.resize(maxMessage);
-	outputBufferMemory.resize(maxMessage);
+	inputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
+	outputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
 
 	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>(packageName), SECPKG_CRED_INBOUND, nullptr, &schannelCredential, nullptr, nullptr, &mCredentialsHandle, &lifetime));
 
@@ -344,10 +345,10 @@ std::string TLSSocket::negotiate()
 
 		outputBuffer.BufferType = SECBUFFER_TOKEN;
 		outputBuffer.cbBuffer = maxMessage;
-		outputBuffer.pvBuffer = outputBufferMemory.data();
+		outputBuffer.pvBuffer = outputBufferMemory.get();
 		inputBuffer[0].BufferType = SECBUFFER_TOKEN;
-		inputBuffer[0].pvBuffer = inputBufferMemory.data();
-		inputBuffer[0].cbBuffer = bytesRead += Socket::receive(inputBufferMemory.data() + bytesRead, toRead, 0);
+		inputBuffer[0].pvBuffer = inputBufferMemory.get();
+		inputBuffer[0].cbBuffer = bytesRead += Socket::receive(inputBufferMemory.get() + bytesRead, toRead, 0);
 		inputBuffer[1].BufferType = SECBUFFER_EMPTY;
 		inputBuffer[1].pvBuffer = nullptr;
 		inputBuffer[1].cbBuffer = 0;
@@ -368,11 +369,10 @@ std::string TLSSocket::negotiate()
 			{
 				if (inputBuffer[1].BufferType == SECBUFFER_EXTRA)
 				{
-					std::string extraBytes(static_cast<std::string::value_type*>(inputBuffer[0].pvBuffer) + inputBuffer[0].cbBuffer - inputBuffer[1].cbBuffer, inputBuffer[1].cbBuffer);
-					
-					bytesRead = extraBytes.size();
+					std::byte *extreBytesBegin = static_cast<std::byte *>(inputBuffer[0].pvBuffer) + inputBuffer[0].cbBuffer - inputBuffer[1].cbBuffer;
+					bytesRead = inputBuffer[1].cbBuffer;
 					toRead = 0;
-					std::copy(extraBytes.begin(), extraBytes.end(), inputBufferMemory.begin());
+					std::copy(extreBytesBegin, extreBytesBegin + bytesRead, inputBufferMemory.get());
 				}
 				else
 				{
@@ -540,7 +540,8 @@ std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
 	messageBuffer[0].cbBuffer = Socket::receive(static_cast<std::string::size_type*>(buffer) + extraData.size(), bufferSize - extraData.size(), flags) + extraData.size();
 	messageBuffer[0].BufferType = SECBUFFER_DATA;
 	
-	try {
+	try
+	{
 		checkSSPIReturn(DecryptMessage(&mContextHandle, &descriptor, 0, &fQop));
 	}
 	catch (SocketException &e)
