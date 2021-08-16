@@ -178,7 +178,7 @@ void Socket::close()
 	#endif
 }
 
-void Socket::bind(std::string_view address, short port, bool numericAddress)
+void Socket::bind(std::string_view address, std::uint16_t port, bool numericAddress)
 {
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPtr(nullptr, freeaddrinfo);
 
@@ -187,8 +187,9 @@ void Socket::bind(std::string_view address, short port, bool numericAddress)
 	hint.ai_family = mDomain; //IPv4
 	hint.ai_socktype = mType;
 	hint.ai_protocol = mProtocol;
-	checkReturn(getaddrinfo(nullptr, std::to_string(port).c_str(), &hint, &list));
-	addressListPtr.reset(list);
+	checkReturn(getaddrinfo(address.data(), std::to_string(port).c_str(), &hint, &list));
+	addressListPtr.reset(list); //Take ownership of the pointer
+	list = nullptr;
 
 	auto len = addressListPtr->ai_addrlen;
 

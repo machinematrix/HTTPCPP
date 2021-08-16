@@ -95,7 +95,7 @@ public:
 	virtual Socket& operator=(Socket&&) noexcept;
 
 	void close();
-	void bind(std::string_view address, short port, bool numericAddress);
+	void bind(std::string_view address, std::uint16_t port, bool numericAddress);
 	void listen(int queueLength);
 	void toggleNonBlockingMode(bool toggle);
 	bool isNonBlocking();
