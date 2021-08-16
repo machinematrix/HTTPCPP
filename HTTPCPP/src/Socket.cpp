@@ -398,7 +398,9 @@ std::string TLSSocket::negotiate()
 				break;
 		}
 
-		newConversation = FALSE;
+		//For some reason, on 32 bits the first call to AcceptSecurityContext doesn't return a valid context, and using that in a subsequent call will cause the function to fail
+		if (mContextHandle.dwLower || mContextHandle.dwUpper)
+			newConversation = FALSE;
 	}
 	while (result == SEC_I_CONTINUE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE || result == SEC_E_INCOMPLETE_MESSAGE);
 
