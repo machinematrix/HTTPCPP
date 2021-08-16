@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <string>
 #include <array>
+#include <charconv>
 
 #ifdef _WIN32
 #include <Ws2tcpip.h>
@@ -180,16 +181,19 @@ void Socket::close()
 
 void Socket::bind(std::string_view address, std::uint16_t port, bool numericAddress)
 {
+	std::array<char, 6> strPort = {}; //Long enough for a 16 bit integer, plus a null character.
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPtr(nullptr, freeaddrinfo);
 
-	addrinfo *list = NULL, hint = { 0 };
+	addrinfo *list = nullptr, hint = { 0 };
 	hint.ai_flags = (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE);
 	hint.ai_family = mDomain; //IPv4
 	hint.ai_socktype = mType;
 	hint.ai_protocol = mProtocol;
-	checkReturn(getaddrinfo(address.data(), std::to_string(port).c_str(), &hint, &list));
+	std::to_chars(strPort.data(), strPort.data() + strPort.size(), port);
+	auto returnValue = getaddrinfo(address.data(), strPort.data(), &hint, &list);
 	addressListPtr.reset(list); //Take ownership of the pointer
 	list = nullptr;
+	checkReturn(returnValue);
 
 	auto len = addressListPtr->ai_addrlen;
 
@@ -204,11 +208,8 @@ void Socket::listen(int queueLength)
 void Socket::toggleNonBlockingMode(bool toggle)
 {
 	#ifdef _WIN32
-	//if (toggle != mNonBlocking)
-	//{
 	u_long toggleLong = mNonBlocking = toggle;
 	checkReturn(ioctlsocket(mSock, FIONBIO, &toggleLong));
-	//}
 	#elif defined (__linux__)
 	int flags = fcntl(mSock, F_GETFL, 0);
 	checkReturn(flags);
