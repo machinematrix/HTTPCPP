@@ -194,7 +194,7 @@ void Socket::close()
 	#ifdef _WIN32
 	closesocket(mSocket);
 	#elif defined (__linux__)
-	::close(mSock);
+	::close(mSocket);
 	#endif
 }
 
@@ -237,10 +237,10 @@ void Socket::toggleNonBlockingMode(bool toggle)
 	u_long toggleLong = mNonBlocking = toggle;
 	checkReturn(ioctlsocket(mSocket, FIONBIO, &toggleLong));
 	#elif defined (__linux__)
-	int flags = fcntl(mSock, F_GETFL, 0);
+	int flags = fcntl(mSocket, F_GETFL, 0);
 	checkReturn(flags);
 	flags = toggle ? flags | O_NONBLOCK : flags & ~O_NONBLOCK;
-	checkReturn(fcntl(mSock, F_SETFL, flags));
+	checkReturn(fcntl(mSocket, F_SETFL, flags));
 	#endif
 }
 
@@ -249,7 +249,7 @@ bool Socket::isNonBlocking()
 	#ifdef _WIN32
 	return mNonBlocking;
 	#elif defined (__linux__)
-	int flags = fcntl(mSock, F_GETFL, 0);
+	int flags = fcntl(mSocket, F_GETFL, 0);
 	checkReturn(flags);
 	return flags & O_NONBLOCK;
 	#endif
@@ -258,9 +258,9 @@ bool Socket::isNonBlocking()
 void Socket::setSocketOption(int level, int optionName, const void *optionValue, int optionLength)
 {
 	#ifdef _WIN32
-	setsockopt(mSocket, level, optionName, static_cast<const char*>(optionValue), optionLength);
+	checkReturn(setsockopt(mSocket, level, optionName, static_cast<const char*>(optionValue), optionLength));
 	#elif defined (__linux__)
-	setsockopt(mSock, level, optionName, optionValue, static_cast<socklen_t>(optionLength));
+	checkReturn(setsockopt(mSocket, level, optionName, optionValue, static_cast<socklen_t>(optionLength)));
 	#endif
 }
 
