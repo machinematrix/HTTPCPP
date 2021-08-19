@@ -24,8 +24,6 @@
 #undef min
 #undef max
 
-#include <iostream>
-
 namespace
 {
 	std::string formatMessage(int code)
