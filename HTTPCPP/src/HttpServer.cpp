@@ -6,6 +6,7 @@
 #include <string>
 #include <algorithm>
 #include <memory>
+#include <future>
 #include "HttpServer.h"
 #include "HttpRequest.h"
 #include "HttpResponse.h"
@@ -26,27 +27,23 @@ namespace
 class Http::Server::Impl
 {
 public:
-	enum class ServerStatus : std::uint8_t { UNINITIALIZED = 1, RUNNING, STOPPED };
 	std::map<std::string, std::function<HandlerCallback>> mHandlers;
-	std::mutex mServerMutex; //to prevent data races between the thread that created the object and the thread that serves requests
-	std::thread mServerThread;
-	std::condition_variable mStatusChanged;
+	std::jthread mServerThread;
 	
 	std::function<LoggerCallback> mEndpointLogger = placeholderLogger;
 	std::function<LoggerCallback> mErrorLogger = placeholderLogger;
 	std::shared_ptr<Socket> mSocket, mSocketSecure;
 	const int mQueueLength;
 	std::uint16_t mPort, mPortSecure;
-	std::atomic<ServerStatus> mStatus; //1 byte
 
-	void serverProcedure();
+	void serverProcedure(std::promise<void>);
 	void handleRequest(std::shared_ptr<Socket>) const;
 
 	Impl(std::uint16_t, std::uint16_t, int, std::string_view, std::string_view);
 	~Impl();
 };
 
-void Http::Server::Impl::serverProcedure()
+void Http::Server::Impl::serverProcedure(std::promise<void> promise)
 {
 	using namespace std::placeholders;
 	try
@@ -55,18 +52,18 @@ void Http::Server::Impl::serverProcedure()
 			mSocket->listen(mQueueLength);
 		if (mSocketSecure)
 			mSocketSecure->listen(mQueueLength);
-		mStatus.store(ServerStatus::RUNNING);
 	}
 	catch (const std::runtime_error &e)
 	{
-		mErrorLogger(e.what());
-		mStatus.store(ServerStatus::STOPPED);
+		promise.set_exception(std::current_exception());
+		return;
 	}
 
+	promise.set_value();
 	ThreadPool pool(static_cast<size_t>(std::thread::hardware_concurrency()) * 2ull);
-	mStatusChanged.notify_all();
 	std::vector<PollFileDescriptor> descriptorList;
 	std::vector<std::pair<std::shared_ptr<Socket>, decltype(descriptorList)::size_type>> socketList;
+	std::stop_token stopToken = mServerThread.get_stop_token();
 
 	if (mSocket)
 	{
@@ -80,7 +77,7 @@ void Http::Server::Impl::serverProcedure()
 		socketList.emplace_back(mSocketSecure, descriptorList.size() - 1);
 	}
 
-	while (mStatus.load() == ServerStatus::RUNNING)
+	while (!stopToken.stop_requested())
 	{
 		if (auto returnValue = WSAPoll(descriptorList.data(), static_cast<ULONG>(descriptorList.size()), 1000); returnValue != SOCKET_ERROR)
 		{
@@ -91,8 +88,8 @@ void Http::Server::Impl::serverProcedure()
 		}
 		else
 		{
-			mStatus.store(ServerStatus::STOPPED);
 			mErrorLogger("poll error code " + std::to_string(returnValue) + ", server stopped");
+			break;
 		}
 	}
 
@@ -101,13 +98,13 @@ void Http::Server::Impl::serverProcedure()
 
 Http::Server::Impl::~Impl()
 {
-	mStatus.store(ServerStatus::STOPPED);
+	mServerThread.get_stop_source().request_stop();
+	if (mServerThread.joinable())
+		mServerThread.join();
 	if (mSocket)
 		mSocket->close();
 	if (mSocketSecure)
 		mSocketSecure->close();
-	if (mServerThread.joinable())
-		mServerThread.join();
 }
 
 void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) const
@@ -208,7 +205,6 @@ Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int conne
 	,mSocketSecure(portSecure ? new TLSSocket(AF_INET, SOCK_STREAM, 0, certificateStore, certificateName) : nullptr)
 	,mPort(port)
 	,mPortSecure(portSecure)
-	,mStatus(ServerStatus::UNINITIALIZED)
 	,mEndpointLogger(placeholderLogger)
 	,mQueueLength(connectionQueueLength)
 {
@@ -253,13 +249,11 @@ Http::Server& Http::Server::operator=(Server &&other) noexcept
 
 void Http::Server::start()
 {
-	mThis->mServerThread = std::thread(&Impl::serverProcedure, mThis);
-	std::unique_lock<std::mutex> lck(mThis->mServerMutex);
+	std::promise<void> exceptionPointerPromise;
+	auto future = exceptionPointerPromise.get_future();
+	mThis->mServerThread = std::jthread(&Impl::serverProcedure, mThis, std::move(exceptionPointerPromise));
 
-	mThis->mStatusChanged.wait(lck, [this]() -> bool { return mThis->mStatus.load() != Impl::ServerStatus::UNINITIALIZED; });
-
-	if (mThis->mStatus.load() != Impl::ServerStatus::RUNNING)
-		throw std::runtime_error("Could not start server");
+	future.get(); //will throw the exception thrown in serverProcedure if something went wrong during startup
 }
 
 void Http::Server::setEndpointLogger(const std::function<LoggerCallback> &callback) noexcept
