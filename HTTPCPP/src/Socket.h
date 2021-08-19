@@ -9,6 +9,7 @@
 
 #ifdef _WIN32
 #define SECURITY_WIN32
+#include <ws2tcpip.h>
 #include <winsock2.h>
 #include <security.h>
 using PollFileDescriptor = WSAPOLLFD;
@@ -80,10 +81,12 @@ class Socket
 	friend bool operator<(const Socket&, const Socket&) noexcept;
 	WinsockLoader mLoader;
 protected:
-	DescriptorType mSock;
+	DescriptorType mSocket;
 private:
 	int mDomain, mType, mProtocol;
 	bool mNonBlocking = false;
+
+	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> getAddressInfo(std::string_view address, std::uint16_t port, int flags);
 public:
 	//Must be used with sockets returned from accept
 	Socket(DescriptorType);
@@ -96,6 +99,7 @@ public:
 
 	void close();
 	void bind(std::string_view address, std::uint16_t port, bool numericAddress);
+	void connect(std::string_view address, std::uint16_t port, bool numericAddress);
 	void listen(int queueLength);
 	void toggleNonBlockingMode(bool toggle);
 	bool isNonBlocking();
@@ -103,7 +107,7 @@ public:
 	virtual Socket* accept();
 	virtual std::string receive(int flags);
 	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
-	virtual std::int64_t send(void *buffer, size_t bufferSize, int flags);
+	virtual std::int64_t send(const void *buffer, size_t bufferSize, int flags);
 	DescriptorType get();
 };
 
@@ -126,7 +130,7 @@ public:
 	TLSSocket* accept() override;
 	std::string receive(int flags);
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
-	std::int64_t send(void *buffer, size_t bufferSize, int flags) override;
+	std::int64_t send(const void *buffer, size_t bufferSize, int flags) override;
 };
 
 bool operator!=(const Socket&, const Socket&) noexcept;

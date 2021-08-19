@@ -89,8 +89,27 @@ void SocketException::setAdditionalInformation(const AdditionalInformationType &
 	mAdditionalInformation = info;
 }
 
+std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> Socket::getAddressInfo(std::string_view address, std::uint16_t port, int flags)
+{
+	std::array<char, 6> strPort = {}; //Long enough for a 16 bit integer, plus a null character.
+	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> result(nullptr, freeaddrinfo);
+
+	addrinfo *list = nullptr, hint = { 0 };
+	hint.ai_flags = flags;
+	hint.ai_family = mDomain; //IPv4
+	hint.ai_socktype = mType;
+	hint.ai_protocol = mProtocol;
+	std::to_chars(strPort.data(), strPort.data() + strPort.size(), port);
+	auto returnValue = getaddrinfo(address.data(), strPort.data(), &hint, &list);
+	result.reset(list); //Take ownership of the pointer
+	list = nullptr;
+	checkReturn(returnValue);
+
+	return result;
+}
+
 Socket::Socket(DescriptorType sock)
-	:mSock(sock),
+	:mSocket(sock),
 	mDomain(0),
 	mType(0),
 	mProtocol(0)
@@ -105,8 +124,8 @@ Socket::Socket(DescriptorType sock)
 
 	try
 	{
-		checkReturn(getsockname(mSock, &name, &nameLen));
-		checkReturn(getsockopt(mSock, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&mType), &typeLen));
+		checkReturn(getsockname(mSocket, &name, &nameLen));
+		checkReturn(getsockopt(mSocket, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&mType), &typeLen));
 
 		mDomain = name.sa_family;
 	}
@@ -118,12 +137,12 @@ Socket::Socket(DescriptorType sock)
 }
 
 Socket::Socket(int domain, int type, int protocol)
-	:mSock(socket(domain, type, protocol)),
+	:mSocket(socket(domain, type, protocol)),
 	mDomain(domain),
 	mType(type),
 	mProtocol(protocol)
 {
-	if (mSock == INVALID_SOCKET)
+	if (mSocket == INVALID_SOCKET)
 		#ifdef _WIN32
 		throw SocketException(WSAGetLastError());
 		#elif defined (__linux__)
@@ -134,7 +153,7 @@ Socket::Socket(int domain, int type, int protocol)
 	{
 		char optval[8] = {};
 
-		checkReturn(setsockopt(mSock, SOL_SOCKET, SO_REUSEADDR, optval, sizeof(optval)));
+		checkReturn(setsockopt(mSocket, SOL_SOCKET, SO_REUSEADDR, optval, sizeof(optval)));
 	}
 	catch (const SocketException&)
 	{
@@ -144,13 +163,13 @@ Socket::Socket(int domain, int type, int protocol)
 }
 
 Socket::Socket(Socket &&other) noexcept
-	:mSock(other.mSock),
+	:mSocket(other.mSocket),
 	mLoader(std::move(other.mLoader)),
 	mDomain(other.mDomain),
 	mType(other.mType),
 	mProtocol(other.mProtocol)
 {
-	other.mSock = INVALID_SOCKET;
+	other.mSocket = INVALID_SOCKET;
 }
 
 Socket::~Socket()
@@ -160,9 +179,9 @@ Socket::~Socket()
 
 Socket& Socket::operator=(Socket &&other) noexcept
 {
-	mSock = other.mSock;
+	mSocket = other.mSocket;
 	mLoader = std::move(other.mLoader);
-	other.mSock = INVALID_SOCKET;
+	other.mSocket = INVALID_SOCKET;
 	mDomain = other.mDomain;
 	mType = other.mType;
 	mProtocol = other.mProtocol;
@@ -173,7 +192,7 @@ Socket& Socket::operator=(Socket &&other) noexcept
 void Socket::close()
 {
 	#ifdef _WIN32
-	closesocket(mSock);
+	closesocket(mSocket);
 	#elif defined (__linux__)
 	::close(mSock);
 	#endif
@@ -182,7 +201,7 @@ void Socket::close()
 void Socket::bind(std::string_view address, std::uint16_t port, bool numericAddress)
 {
 	std::array<char, 6> strPort = {}; //Long enough for a 16 bit integer, plus a null character.
-	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPtr(nullptr, freeaddrinfo);
+	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPointer(nullptr, freeaddrinfo);
 
 	addrinfo *list = nullptr, hint = { 0 };
 	hint.ai_flags = (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE);
@@ -191,25 +210,32 @@ void Socket::bind(std::string_view address, std::uint16_t port, bool numericAddr
 	hint.ai_protocol = mProtocol;
 	std::to_chars(strPort.data(), strPort.data() + strPort.size(), port);
 	auto returnValue = getaddrinfo(address.data(), strPort.data(), &hint, &list);
-	addressListPtr.reset(list); //Take ownership of the pointer
+	addressListPointer.reset(list); //Take ownership of the pointer
 	list = nullptr;
 	checkReturn(returnValue);
 
-	auto len = addressListPtr->ai_addrlen;
+	//auto addressListPointer = getAddressInfo(address, port, (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE));
 
-	checkReturn(::bind(mSock, addressListPtr->ai_addr, static_cast<int>(len)));
+	checkReturn(::bind(mSocket, addressListPointer->ai_addr, static_cast<int>(addressListPointer->ai_addrlen)));
+}
+
+void Socket::connect(std::string_view address, std::uint16_t port, bool numericAddress)
+{
+	auto addressListPointer = getAddressInfo(address, port, (numericAddress ? AI_NUMERICSERV : 0));
+
+	checkReturn(::connect(mSocket, addressListPointer->ai_addr, static_cast<int>(addressListPointer->ai_addrlen)));
 }
 
 void Socket::listen(int queueLength)
 {
-	checkReturn(::listen(mSock, queueLength));
+	checkReturn(::listen(mSocket, queueLength));
 }
 
 void Socket::toggleNonBlockingMode(bool toggle)
 {
 	#ifdef _WIN32
 	u_long toggleLong = mNonBlocking = toggle;
-	checkReturn(ioctlsocket(mSock, FIONBIO, &toggleLong));
+	checkReturn(ioctlsocket(mSocket, FIONBIO, &toggleLong));
 	#elif defined (__linux__)
 	int flags = fcntl(mSock, F_GETFL, 0);
 	checkReturn(flags);
@@ -232,7 +258,7 @@ bool Socket::isNonBlocking()
 void Socket::setSocketOption(int level, int optionName, const void *optionValue, int optionLength)
 {
 	#ifdef _WIN32
-	setsockopt(mSock, level, optionName, static_cast<const char*>(optionValue), optionLength);
+	setsockopt(mSocket, level, optionName, static_cast<const char*>(optionValue), optionLength);
 	#elif defined (__linux__)
 	setsockopt(mSock, level, optionName, optionValue, static_cast<socklen_t>(optionLength));
 	#endif
@@ -240,7 +266,7 @@ void Socket::setSocketOption(int level, int optionName, const void *optionValue,
 
 Socket* Socket::accept()
 {
-	DescriptorType clientSocket = ::accept(mSock, nullptr, nullptr);
+	DescriptorType clientSocket = ::accept(mSocket, nullptr, nullptr);
 
 	if (clientSocket != SOCKET_ERROR)
 		return new Socket(clientSocket);
@@ -262,7 +288,7 @@ std::string Socket::receive(int flags)
 
 std::int64_t Socket::receive(void *buffer, size_t bufferSize, int flags)
 {
-	std::int64_t result = recv(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
+	std::int64_t result = recv(mSocket, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
 
 	if (bufferSize && !result)
 		throw SocketException("The other side closed the connection (recv returned 0)");
@@ -271,9 +297,9 @@ std::int64_t Socket::receive(void *buffer, size_t bufferSize, int flags)
 	return result;
 }
 
-std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
+std::int64_t Socket::send(const void *buffer, size_t bufferSize, int flags)
 {
-	std::int64_t result = ::send(mSock, static_cast<BufferType>(buffer), static_cast<LengthType>(bufferSize), flags);
+	std::int64_t result = ::send(mSocket, static_cast<const char*>(buffer), static_cast<LengthType>(bufferSize), flags);
 
 	checkReturn(static_cast<int>(result));
 
@@ -282,7 +308,7 @@ std::int64_t Socket::send(void *buffer, size_t bufferSize, int flags)
 
 DescriptorType Socket::get()
 {
-	return mSock;
+	return mSocket;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -465,7 +491,7 @@ TLSSocket& TLSSocket::operator=(TLSSocket &&other) noexcept
 
 TLSSocket* TLSSocket::accept()
 {
-	DescriptorType clientSocket = ::accept(mSock, nullptr, nullptr);
+	DescriptorType clientSocket = ::accept(mSocket, nullptr, nullptr);
 
 	if (clientSocket != SOCKET_ERROR)
 		return new TLSSocket(clientSocket, mCertificateStore, mCertificateName);
@@ -559,7 +585,7 @@ std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
 	return bufferSize;
 }
 
-std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
+std::int64_t TLSSocket::send(const void *buffer, size_t bufferSize, int flags)
 {
 	#ifdef WIN32
 	if (!mNegotiationCompleted)
@@ -588,7 +614,7 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 
 		secBuffer[1].pvBuffer = message.data();
 		secBuffer[1].cbBuffer = bytesToSend;
-		memcpy(message.data(), static_cast<std::uint8_t*>(buffer) + sent, bytesToSend);
+		memcpy(message.data(), static_cast<const std::byte*>(buffer) + sent, bytesToSend);
 		checkSSPIReturn(EncryptMessage(&mContextHandle, 0, &descriptor, 0));
 		sent += bytesToSend;
 
@@ -607,7 +633,7 @@ std::int64_t TLSSocket::send(void *buffer, size_t bufferSize, int flags)
 
 bool operator!=(const Socket &lhs, const Socket &rhs) noexcept
 {
-	return lhs.mSock != rhs.mSock;
+	return lhs.mSocket != rhs.mSocket;
 }
 
 bool operator==(const Socket &lhs, const Socket &rhs) noexcept
@@ -617,5 +643,5 @@ bool operator==(const Socket &lhs, const Socket &rhs) noexcept
 
 bool operator<(const Socket &lhs, const Socket &rhs) noexcept
 {
-	return lhs.mSock < rhs.mSock;
+	return lhs.mSocket < rhs.mSocket;
 }
