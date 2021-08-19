@@ -198,21 +198,7 @@ void Socket::close()
 
 void Socket::bind(std::string_view address, std::uint16_t port, bool numericAddress)
 {
-	std::array<char, 6> strPort = {}; //Long enough for a 16 bit integer, plus a null character.
-	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> addressListPointer(nullptr, freeaddrinfo);
-
-	addrinfo *list = nullptr, hint = { 0 };
-	hint.ai_flags = (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE);
-	hint.ai_family = mDomain; //IPv4
-	hint.ai_socktype = mType;
-	hint.ai_protocol = mProtocol;
-	std::to_chars(strPort.data(), strPort.data() + strPort.size(), port);
-	auto returnValue = getaddrinfo(address.data(), strPort.data(), &hint, &list);
-	addressListPointer.reset(list); //Take ownership of the pointer
-	list = nullptr;
-	checkReturn(returnValue);
-
-	//auto addressListPointer = getAddressInfo(address, port, (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE));
+	auto addressListPointer = getAddressInfo(address, port, (numericAddress ? AI_NUMERICSERV | AI_PASSIVE : AI_PASSIVE));
 
 	checkReturn(::bind(mSocket, addressListPointer->ai_addr, static_cast<int>(addressListPointer->ai_addrlen)));
 }
