@@ -53,7 +53,7 @@ void Http::Server::Impl::serverProcedure(std::promise<void> promise)
 		if (mSocketSecure)
 			mSocketSecure->listen(mQueueLength);
 	}
-	catch (const std::runtime_error &e)
+	catch (const std::runtime_error&)
 	{
 		promise.set_exception(std::current_exception());
 		return;
