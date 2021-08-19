@@ -112,13 +112,13 @@ Http::Server::Impl::~Impl()
 
 void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) const
 {
-	DWORD timeout = 5000;
-	mEndpointLogger("Connected socket " + std::to_string(clientSocket->get()));
-	clientSocket->setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-	clientSocket->setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-
 	try
 	{
+		DWORD timeout = 5000;
+		mEndpointLogger("Connected socket " + std::to_string(clientSocket->get()));
+		clientSocket->setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+		clientSocket->setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
 		while (true)
 		{
 			try
