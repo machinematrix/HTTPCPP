@@ -1,13 +1,10 @@
 #include <string>
-#include <type_traits>
-#include <sstream>
 #include <map>
 #include <vector>
-#include <chrono>
+#include <stdexcept>
 #include "HttpResponse.h"
 #include "Common.h"
 #include "Socket.h"
-
 #ifdef __linux__
 #include <cstring>
 #endif
@@ -19,7 +16,7 @@ public:
 	std::string mVersion;
 	std::vector<uint8_t> mBody;
 	std::shared_ptr<Socket> mSock;
-	std::uint16_t mStatusCode;
+	std::optional<std::uint16_t> mStatusCode;
 
 	static const char* getFieldText(HeaderField field);
 	Impl(std::shared_ptr<Socket>);
@@ -128,11 +125,9 @@ const char* Http::Response::Impl::getFieldText(HeaderField field)
 
 Http::Response::Impl::Impl(std::shared_ptr<Socket> sock)
 	:mSock(sock)
-	,mStatusCode(0)
 	,mVersion("1.1")
 	,mFields(CaseInsensitiveComparator)
-{
-}
+{}
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -192,20 +187,24 @@ void Http::Response::setField(std::string_view field, std::string_view value)
 
 std::optional<std::string_view> Http::Response::getField(HeaderField field)
 {
-	try {
+	try
+	{
 		return mThis->mFields.at(mThis->getFieldText(field));
 	}
-	catch (const std::out_of_range&) {
+	catch (const std::out_of_range&)
+	{
 		return std::optional<std::string_view>();
 	}
 }
 
 std::optional<std::string_view> Http::Response::getField(std::string_view field)
 {
-	try {
+	try
+	{
 		return mThis->mFields.at(field.data());
 	}
-	catch (const std::out_of_range&) {
+	catch (const std::out_of_range&)
+	{
 		return std::optional<std::string_view>();
 	}
 }
@@ -215,10 +214,11 @@ void Http::Response::sendHeaders()
 	if (!mThis->mStatusCode)
 		throw ResponseException("No status code set");
 	constexpr const char *fieldEnd = "\r\n";
-	std::string response = "HTTP/" + mThis->mVersion + ' ' + std::to_string(mThis->mStatusCode) + fieldEnd;
+	std::string response = "HTTP/" + mThis->mVersion + ' ' + std::to_string(mThis->mStatusCode.value()) + fieldEnd;
 	std::int64_t bytesSent = 0;
 
-	for (const auto &fieldValue : mThis->mFields) {
+	for (const auto &fieldValue : mThis->mFields)
+	{
 		response += fieldValue.first;
 		response += ": ";
 		response += fieldValue.second;
@@ -233,7 +233,8 @@ void Http::Response::sendHeaders()
 
 		if (auxBytesSent > 0)
 			bytesSent += auxBytesSent;
-		else {
+		else
+		{
 			#ifdef _WIN32
 			LPSTR message;
 			FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
@@ -261,12 +262,11 @@ void Http::Response::send()
 		throw ResponseException("No status code set");
 
 	constexpr const char *fieldEnd = "\r\n";
-
 	std::int64_t bytesSent = 0;
+	std::string response = "HTTP/" + mThis->mVersion + ' ' + std::to_string(mThis->mStatusCode.value()) + fieldEnd;
 
-	std::string response = "HTTP/" + mThis->mVersion + ' ' + std::to_string(mThis->mStatusCode) + fieldEnd;
-
-	for (const auto &fieldValue : mThis->mFields) {
+	for (const auto &fieldValue : mThis->mFields)
+	{
 		response += fieldValue.first;
 		response += ": ";
 		response += fieldValue.second;
