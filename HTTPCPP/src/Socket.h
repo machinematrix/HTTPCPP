@@ -6,6 +6,7 @@
 #include <functional>
 #include <stdexcept>
 #include <variant>
+#include <optional>
 
 #ifdef _WIN32
 #define SECURITY_WIN32
@@ -113,16 +114,21 @@ public:
 
 class TLSSocket : public Socket
 {
-	std::string mCertificateStore, mCertificateName;
+public:
+	enum class Role { CLIENT, SERVER };
+private:
+	std::string mCertificateStore, mCertificateSubject;
+	std::optional<std::string> mPrincipalName;
 	CredHandle mCredentialsHandle = {};
 	SecHandle mContextHandle = {};
 	SecPkgContext_StreamSizes mStreamSizes = {};
+	Role mRole;
 	bool mNegotiationCompleted = false;
 
 	std::string negotiate();
 public:
-	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateName);
-	TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateName);
+	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
+	TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateSubjecte, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 	TLSSocket(TLSSocket&&) noexcept;
 	~TLSSocket() override;
 	TLSSocket& operator=(TLSSocket&&) noexcept;
