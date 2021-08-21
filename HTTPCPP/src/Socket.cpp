@@ -252,7 +252,7 @@ Socket* Socket::accept()
 {
 	DescriptorType clientSocket = ::accept(mSocket, nullptr, nullptr);
 
-	if (clientSocket != SOCKET_ERROR)
+	if (clientSocket != INVALID_SOCKET)
 		return new Socket(clientSocket);
 	else
 		#ifdef _WIN32
@@ -494,7 +494,7 @@ TLSSocket* TLSSocket::accept()
 {
 	DescriptorType clientSocket = ::accept(mSocket, nullptr, nullptr);
 
-	if (clientSocket != SOCKET_ERROR)
+	if (clientSocket != INVALID_SOCKET)
 		return new TLSSocket(clientSocket, mCertificateStore, mCertificateSubject, Role::SERVER);
 	else
 		#ifdef _WIN32
