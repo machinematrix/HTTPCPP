@@ -444,8 +444,8 @@ TLSSocket::TLSSocket(DescriptorType sock, std::string_view certificateStore, std
 	mPrincipalName(principalName)
 {}
 
-TLSSocket::TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateCubject, Role role, const std::optional<std::string> &principalName)
-	:Socket(domain, type, protocol),
+TLSSocket::TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateCubject, Role role, const std::optional<std::string> &principalName)
+	:Socket(domain, SOCK_STREAM, IPPROTO_TCP),
 	mCertificateStore(certificateStore),
 	mCertificateSubject(certificateCubject),
 	mRole(role),

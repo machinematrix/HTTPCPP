@@ -88,9 +88,10 @@ private:
 	bool mNonBlocking = false;
 
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> getAddressInfo(std::string_view address, std::uint16_t port, int flags);
-public:
+protected:
 	//Must be used with sockets returned from accept
 	Socket(DescriptorType);
+public:
 	Socket(int domain, int type, int protocol);
 	Socket(const Socket&) = delete;
 	Socket(Socket&&) noexcept;
@@ -126,9 +127,9 @@ private:
 	bool mNegotiationCompleted = false;
 
 	std::string negotiate();
-public:
 	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
-	TLSSocket(int domain, int type, int protocol, std::string_view certificateStore, std::string_view certificateSubjecte, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
+public:
+	TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateSubjecte, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 	TLSSocket(TLSSocket&&) noexcept;
 	~TLSSocket() override;
 	TLSSocket& operator=(TLSSocket&&) noexcept;

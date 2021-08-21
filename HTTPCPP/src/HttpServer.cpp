@@ -202,7 +202,7 @@ void Http::Server::Impl::handleRequest(std::shared_ptr<Socket> clientSocket) con
 
 Http::Server::Impl::Impl(std::uint16_t port, std::uint16_t portSecure, int connectionQueueLength, std::string_view certificateStore, std::string_view certificateName)
 	:mSocket(port ? new Socket(AF_INET, SOCK_STREAM, 0) : nullptr)
-	,mSocketSecure(portSecure ? new TLSSocket(AF_INET, SOCK_STREAM, 0, certificateStore, certificateName) : nullptr)
+	,mSocketSecure(portSecure ? new TLSSocket(AF_INET, certificateStore, certificateName) : nullptr)
 	,mPort(port)
 	,mPortSecure(portSecure)
 	,mEndpointLogger(placeholderLogger)
