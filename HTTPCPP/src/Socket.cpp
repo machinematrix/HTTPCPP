@@ -101,7 +101,9 @@ std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> Socket::getAddressInfo(std::s
 	auto returnValue = getaddrinfo(address.data(), strPort.data(), &hint, &list);
 	result.reset(list); //Take ownership of the pointer
 	list = nullptr;
-	checkReturn(returnValue);
+
+	if (returnValue)
+		throw SocketException(returnValue);
 
 	return result;
 }
