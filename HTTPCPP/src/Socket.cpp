@@ -119,15 +119,24 @@ Socket::Socket(DescriptorType sock)
 	#elif defined __linux__
 	using StructLength = socklen_t;
 	#endif
-	sockaddr name = {};
-	StructLength nameLen = sizeof(name), typeLen = sizeof(socklen_t);
+
+	struct
+	{
+		CSADDR_INFO info;
+		sockaddr dummies[2];
+	} state;
+	WSAPROTOCOL_INFOW protocolInfo;
+	StructLength typeLen = sizeof(socklen_t), stateLength = sizeof(state), protocolInfoLength = sizeof(protocolInfo);
 
 	try
 	{
-		checkReturn(getsockname(mSocket, &name, &nameLen));
+		checkReturn(getsockopt(mSocket, SOL_SOCKET, SO_PROTOCOL_INFO, reinterpret_cast<char*>(&protocolInfo), &protocolInfoLength));
 		checkReturn(getsockopt(mSocket, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&mType), &typeLen));
-
-		mDomain = name.sa_family;
+		//This actually requires a buffer to hold a CSADDR_INFO plus two sockaddr structures, which will be pointed to by the lpSockaddr members of the LocalAddr and RemoteAddr members of the CSADDR_INFO structure
+		//more info: https://stackoverflow.com/questions/65782944/socket-option-so-bsp-state-fails-with-wsaefault
+		checkReturn(getsockopt(mSocket, SOL_SOCKET, SO_BSP_STATE, reinterpret_cast<char*>(&state), &stateLength));
+		mDomain = protocolInfo.iAddressFamily; //Could be retrieved with SO_DOMAIN option on linux.
+		mProtocol = state.info.iProtocol;
 	}
 	catch (const SocketException&)
 	{

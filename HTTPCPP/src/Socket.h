@@ -83,8 +83,8 @@ class Socket
 	WinsockLoader mLoader;
 protected:
 	DescriptorType mSocket;
-private:
 	int mDomain, mType, mProtocol;
+private:
 	bool mNonBlocking = false;
 
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> getAddressInfo(std::string_view address, std::uint16_t port, int flags);
