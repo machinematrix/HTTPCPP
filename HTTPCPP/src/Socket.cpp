@@ -312,32 +312,14 @@ DescriptorType Socket::get()
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-std::string TLSSocket::negotiate()
+std::string TLSSocket::establishSecurityContext()
 {
-	//certmgr.msc - certificate store
-	#ifdef _WIN32
-	/*unsigned long packageCount;
-	PSecPkgInfoA packages;
-	EnumerateSecurityPackagesA(&packageCount, &packages);
-
-	for (decltype(packageCount) i = 0; i < packageCount; ++i)
-		std::cout << packages[i].Name << std::endl;*/
-	constexpr const char *packageName = "Schannel";
-	std::unique_ptr<std::byte[]> inputBufferMemory, outputBufferMemory;
 	std::string extraData;
-	PSecPkgInfoA packageInfo;
-	constexpr decltype(packageInfo->cbMaxToken) initialBytesToRead = 16;
-	decltype(packageInfo->cbMaxToken) maxMessage, toRead = initialBytesToRead;
 	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
-	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext)*> certificate(nullptr, CertFreeCertificateContext);
+	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext) *> certificate(nullptr, CertFreeCertificateContext);
 	SCHANNEL_CRED schannelCredential = {};
-	std::int64_t bytesRead = 0;
-	SECURITY_STATUS result {};
-	BOOL newConversation = TRUE;
-	ULONG attributes = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
-
-	if (!mPrincipalName)
-		attributes |= ISC_REQ_MANUAL_CRED_VALIDATION;
+	CredHandle credentialsHandle = {};
+	SecHandle contextHandle = {};
 
 	certificateStore.reset(CertOpenSystemStoreA(NULL, mCertificateStore.c_str())/*CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY")*/);
 	if (!certificateStore)
@@ -346,21 +328,57 @@ std::string TLSSocket::negotiate()
 	certificate.reset(CertFindCertificateInStore(certificateStore.get(), X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_A, mCertificateSubject.c_str(), NULL));
 	if (!certificate)
 		throw SocketException(GetLastError());
-	
+
 	auto certPtr = certificate.get();
 
 	schannelCredential.dwVersion = SCHANNEL_CRED_VERSION;
 	schannelCredential.cCreds = 1;
 	schannelCredential.paCred = &certPtr;
 
-	checkSSPIReturn(QuerySecurityPackageInfoA(const_cast<char*>(packageName), &packageInfo));
+	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>("Schannel"), mRole == Role::SERVER ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND, nullptr, &schannelCredential, nullptr, nullptr, &credentialsHandle, nullptr));
+
+	try
+	{
+		std::string result = negotiate(credentialsHandle, contextHandle);
+
+		mCredentialsHandle = credentialsHandle;
+		mContextHandle = contextHandle;
+		mNegotiationCompleted = true;
+		return result;
+	}
+	catch (const SocketException &)
+	{
+		DeleteSecurityContext(&contextHandle);
+		FreeCredentialHandle(&credentialsHandle);
+		throw;
+	}
+}
+
+std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &contextHandle)
+{
+	//certmgr.msc - certificate store
+	/*unsigned long packageCount;
+	PSecPkgInfoA packages;
+	EnumerateSecurityPackagesA(&packageCount, &packages);
+
+	for (decltype(packageCount) i = 0; i < packageCount; ++i)
+		std::cout << packages[i].Name << std::endl;*/
+	PSecPkgInfoA packageInfo;
+	constexpr decltype(packageInfo->cbMaxToken) initialBytesToRead = 16;
+	decltype(packageInfo->cbMaxToken) maxMessage, toRead = initialBytesToRead;
+	ULONG attributes = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
+	if (!mPrincipalName)
+		attributes |= ISC_REQ_MANUAL_CRED_VALIDATION;
+
+	checkSSPIReturn(QuerySecurityPackageInfoA(const_cast<char*>("Schannel"), &packageInfo));
 	maxMessage = packageInfo->cbMaxToken;
 	FreeContextBuffer(packageInfo);
 
-	inputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
-	outputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
-
-	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char *>(packageName), mRole == Role::SERVER ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND, nullptr, &schannelCredential, nullptr, nullptr, &mCredentialsHandle, nullptr));
+	std::string extraData;
+	std::unique_ptr<std::byte[]> inputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
+	std::unique_ptr<std::byte[]> outputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
+	std::int64_t bytesRead = 0;
+	SECURITY_STATUS result {};
 
 	do
 	{
@@ -373,7 +391,7 @@ std::string TLSSocket::negotiate()
 		outputBuffer.cbBuffer = maxMessage;
 		outputBuffer.pvBuffer = outputBufferMemory.get();
 		inputBuffer[0].BufferType = SECBUFFER_TOKEN;
-		if (mRole == Role::SERVER || !newConversation)
+		if (mRole == Role::SERVER || contextHandle.dwLower || contextHandle.dwUpper)
 		{
 			inputBuffer[0].pvBuffer = inputBufferMemory.get();
 			inputBuffer[0].cbBuffer = bytesRead += Socket::receive(inputBufferMemory.get() + bytesRead, toRead, 0);
@@ -383,15 +401,15 @@ std::string TLSSocket::negotiate()
 		inputBuffer[1].cbBuffer = 0;
 
 		if (mRole == Role::SERVER)
-			result = AcceptSecurityContext(&mCredentialsHandle, newConversation ? nullptr : &mContextHandle, &inputBufferDescriptor, attributes, 0, &mContextHandle, &outputBufferDescriptor, &attributes, nullptr);
+			result = AcceptSecurityContext(&credentialsHandle, contextHandle.dwLower || contextHandle.dwUpper ? &contextHandle : nullptr, &inputBufferDescriptor, attributes, 0, &contextHandle, &outputBufferDescriptor, &attributes, nullptr);
 		else if (mRole == Role::CLIENT)
-			result = InitializeSecurityContextA(&mCredentialsHandle, newConversation ? nullptr : &mContextHandle, mPrincipalName ? mPrincipalName.value().data() : nullptr, attributes, 0, 0, newConversation ? nullptr : &inputBufferDescriptor, 0, &mContextHandle, &outputBufferDescriptor, &attributes, nullptr);
+			result = InitializeSecurityContextA(&credentialsHandle, contextHandle.dwLower || contextHandle.dwUpper ? &contextHandle : nullptr, mPrincipalName ? mPrincipalName.value().data() : nullptr, attributes, 0, 0, contextHandle.dwLower || contextHandle.dwUpper ? &inputBufferDescriptor : nullptr, 0, &contextHandle, &outputBufferDescriptor, &attributes, nullptr);
 		
 		switch (result)
 		{
 			case SEC_I_COMPLETE_NEEDED:
 			case SEC_I_COMPLETE_AND_CONTINUE:
-				checkSSPIReturn(CompleteAuthToken(&mContextHandle, &outputBufferDescriptor));
+				checkSSPIReturn(CompleteAuthToken(&contextHandle, &outputBufferDescriptor));
 				[[fallthrough]];
 			case SEC_E_OK:
 				if (outputBuffer.BufferType == SECBUFFER_EXTRA)
@@ -429,22 +447,17 @@ std::string TLSSocket::negotiate()
 				toRead = initialBytesToRead;
 				break;
 		}
-
-		//For some reason, on 32 bits the first call to AcceptSecurityContext doesn't return a valid context, and using that in a subsequent call will cause the function to fail
-		if (mContextHandle.dwLower || mContextHandle.dwUpper)
-			newConversation = FALSE;
 	}
 	while (result == SEC_I_CONTINUE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE || result == SEC_E_INCOMPLETE_MESSAGE);
+	SEC_I_CONTEXT_EXPIRED; 
 
 	SecPkgContext_Sizes sizes;
 	SecPkgContext_ConnectionInfo connInfo;
-	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes));
-	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_SIZES, &sizes));
-	checkSSPIReturn(QueryContextAttributes(&mContextHandle, SECPKG_ATTR_CONNECTION_INFO, &connInfo));
-	mNegotiationCompleted = true;
+	checkSSPIReturn(QueryContextAttributes(&contextHandle, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes));
+	checkSSPIReturn(QueryContextAttributes(&contextHandle, SECPKG_ATTR_SIZES, &sizes));
+	checkSSPIReturn(QueryContextAttributes(&contextHandle, SECPKG_ATTR_CONNECTION_INFO, &connInfo));
 
 	return extraData;
-	#endif
 }
 
 TLSSocket::TLSSocket(DescriptorType sock, std::string_view certificateStore, std::string_view certificateCubject, Role role, const std::optional<std::string> &principalName)
@@ -521,7 +534,7 @@ std::string TLSSocket::receive(int flags)
 
 	#ifdef _WIN32
 	if (!mNegotiationCompleted)
-		extraData = negotiate();
+		extraData = establishSecurityContext();
 
 	std::string message(extraData);
 	SecBuffer buffer[4] = {};
@@ -572,7 +585,7 @@ std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, messageBuffer };
 
 	if (!mNegotiationCompleted)
-		extraData = negotiate();
+		extraData = establishSecurityContext();
 
 	std::copy(extraData.begin(), extraData.end(), static_cast<std::string::size_type*>(buffer));
 	messageBuffer[0].pvBuffer = buffer;
@@ -600,7 +613,7 @@ std::int64_t TLSSocket::send(const void *buffer, size_t bufferSize, int flags)
 {
 	#ifdef WIN32
 	if (!mNegotiationCompleted)
-		negotiate();
+		establishSecurityContext();
 
 	SecBuffer secBuffer[4];
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, secBuffer };

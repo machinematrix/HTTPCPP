@@ -126,7 +126,8 @@ private:
 	Role mRole;
 	bool mNegotiationCompleted = false;
 
-	std::string negotiate();
+	std::string establishSecurityContext();
+	std::string negotiate(CredHandle&, SecHandle&);
 	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 public:
 	TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateSubjecte, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
