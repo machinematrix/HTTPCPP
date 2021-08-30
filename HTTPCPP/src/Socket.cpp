@@ -449,7 +449,6 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 		}
 	}
 	while (result == SEC_I_CONTINUE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE || result == SEC_E_INCOMPLETE_MESSAGE);
-	SEC_I_CONTEXT_EXPIRED; 
 
 	SecPkgContext_Sizes sizes;
 	SecPkgContext_ConnectionInfo connInfo;
