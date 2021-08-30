@@ -107,9 +107,9 @@ public:
 	bool isNonBlocking();
 	void setSocketOption(int level, int optionName, const void *optionValue, int optionLength);
 	virtual Socket* accept();
-	virtual std::string receive(int flags);
-	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags);
-	virtual std::int64_t send(const void *buffer, size_t bufferSize, int flags);
+	virtual std::string receive(int flags = 0);
+	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags = 0);
+	virtual std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0);
 	DescriptorType get();
 };
 
@@ -136,9 +136,9 @@ public:
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
-	std::string receive(int flags);
-	std::int64_t receive(void *buffer, size_t bufferSize, int flags) override;
-	std::int64_t send(const void *buffer, size_t bufferSize, int flags) override;
+	std::string receive(int flags = 0);
+	std::int64_t receive(void *buffer, size_t bufferSize, int flags = 0) override;
+	std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0) override;
 };
 
 bool operator!=(const Socket&, const Socket&) noexcept;
