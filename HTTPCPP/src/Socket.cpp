@@ -312,48 +312,6 @@ DescriptorType Socket::get()
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-std::string TLSSocket::establishSecurityContext()
-{
-	std::string extraData;
-	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
-	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext) *> certificate(nullptr, CertFreeCertificateContext);
-	SCHANNEL_CRED schannelCredential = {};
-	CredHandle credentialsHandle = {};
-	SecHandle contextHandle = {};
-
-	certificateStore.reset(CertOpenSystemStoreA(NULL, mCertificateStore.c_str())/*CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY")*/);
-	if (!certificateStore)
-		throw SocketException(GetLastError());
-
-	certificate.reset(CertFindCertificateInStore(certificateStore.get(), X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_A, mCertificateSubject.c_str(), NULL));
-	if (!certificate)
-		throw SocketException(GetLastError());
-
-	auto certPtr = certificate.get();
-
-	schannelCredential.dwVersion = SCHANNEL_CRED_VERSION;
-	schannelCredential.cCreds = 1;
-	schannelCredential.paCred = &certPtr;
-
-	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>("Schannel"), mRole == Role::SERVER ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND, nullptr, &schannelCredential, nullptr, nullptr, &credentialsHandle, nullptr));
-
-	try
-	{
-		std::string result = negotiate(credentialsHandle, contextHandle);
-
-		mCredentialsHandle = credentialsHandle;
-		mContextHandle = contextHandle;
-		mNegotiationCompleted = true;
-		return result;
-	}
-	catch (const SocketException &)
-	{
-		DeleteSecurityContext(&contextHandle);
-		FreeCredentialHandle(&credentialsHandle);
-		throw;
-	}
-}
-
 std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &contextHandle)
 {
 	//certmgr.msc - certificate store
@@ -459,18 +417,18 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 	return extraData;
 }
 
-TLSSocket::TLSSocket(DescriptorType sock, std::string_view certificateStore, std::string_view certificateCubject, Role role, const std::optional<std::string> &principalName)
+TLSSocket::TLSSocket(DescriptorType sock, std::string_view certificateStore, std::string_view certificateSubject, Role role, const std::optional<std::string> &principalName)
 	:Socket(sock),
 	mCertificateStore(certificateStore),
-	mCertificateSubject(certificateCubject),
+	mCertificateSubject(certificateSubject),
 	mRole(role),
 	mPrincipalName(principalName)
 {}
 
-TLSSocket::TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateCubject, Role role, const std::optional<std::string> &principalName)
+TLSSocket::TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateSubject, Role role, const std::optional<std::string> &principalName)
 	:Socket(domain, SOCK_STREAM, IPPROTO_TCP),
 	mCertificateStore(certificateStore),
-	mCertificateSubject(certificateCubject),
+	mCertificateSubject(certificateSubject),
 	mRole(role),
 	mPrincipalName(principalName)
 {}
@@ -482,7 +440,7 @@ TLSSocket::TLSSocket(TLSSocket &&other) noexcept
 	mCredentialsHandle(other.mCredentialsHandle),
 	mContextHandle(other.mContextHandle),
 	mStreamSizes(other.mStreamSizes),
-	mNegotiationCompleted(other.mNegotiationCompleted),
+	mContextEstablished(other.mContextEstablished),
 	mRole(other.mRole),
 	mPrincipalName(other.mPrincipalName)
 {
@@ -506,7 +464,7 @@ TLSSocket& TLSSocket::operator=(TLSSocket &&other) noexcept
 	mContextHandle = other.mContextHandle;
 	other.mContextHandle = SecHandle{};
 	mStreamSizes = other.mStreamSizes;
-	mNegotiationCompleted = other.mNegotiationCompleted;
+	mContextEstablished = other.mContextEstablished;
 	mRole = other.mRole;
 	mPrincipalName = std::move(other.mPrincipalName);
 
@@ -531,15 +489,14 @@ std::string TLSSocket::receive(int flags)
 {
 	std::string result, extraData;
 
-	#ifdef _WIN32
-	if (!mNegotiationCompleted)
+	if (!mContextEstablished)
 		extraData = establishSecurityContext();
 
 	std::string message(extraData);
 	SecBuffer buffer[4] = {};
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, buffer };
 	std::int64_t bytesRead = extraData.size(), toRead = mStreamSizes.cbHeader;
-	SECURITY_STATUS ret;
+	SECURITY_STATUS returnValue;
 
 	message.resize(message.size() + toRead);
 
@@ -558,60 +515,69 @@ std::string TLSSocket::receive(int flags)
 		buffer[0].cbBuffer = message.size() - (toRead - read); //this used to be just message.size(), which assumes that I always receive toRead bytes, which is not always the case and would sometimes cause decrypt errors.
 		buffer[0].BufferType = SECBUFFER_DATA;
 
-		for (int i = 1; i < sizeof(buffer) / sizeof(*buffer); ++i)
+		for (std::size_t i = 1; i < sizeof(buffer) / sizeof(*buffer); ++i)
 		{
 			buffer[i].pvBuffer = nullptr;
 			buffer[i].cbBuffer = 0;
 			buffer[i].BufferType = SECBUFFER_EMPTY;
 		}
 
-		ret = DecryptMessage(&mContextHandle, &descriptor, 0, nullptr);
-	} while (ret == SEC_E_INCOMPLETE_MESSAGE);
+		returnValue = DecryptMessage(&mContextHandle, &descriptor, 0, nullptr);
+	} while (returnValue == SEC_E_INCOMPLETE_MESSAGE);
 
-	checkSSPIReturn(ret);
+	checkSSPIReturn(returnValue);
 
 	result.append(static_cast<std::string::value_type*>(buffer[1].pvBuffer), buffer[1].cbBuffer);
-	#endif
 
 	return result;
 }
 
-std::int64_t TLSSocket::receive(void *buffer, size_t bufferSize, int flags)
+std::int64_t TLSSocket::receive(void *buffer, size_t, int flags)
 {
-	#ifdef WIN32
+	using std::byte;
 	std::string extraData;
-	SecBuffer messageBuffer[4] = {};
-	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, messageBuffer };
 
-	if (!mNegotiationCompleted)
+	if (!mContextEstablished)
 		extraData = establishSecurityContext();
 
-	std::copy(extraData.begin(), extraData.end(), static_cast<std::string::size_type*>(buffer));
-	messageBuffer[0].pvBuffer = buffer;
-	messageBuffer[0].cbBuffer = Socket::receive(static_cast<std::string::size_type*>(buffer) + extraData.size(), bufferSize - extraData.size(), flags) + extraData.size();
-	messageBuffer[0].BufferType = SECBUFFER_DATA;
-	
-	try
+	SecBuffer messageBuffer[4] = {};
+	SecBufferDesc messageBufferDescriptor = { SECBUFFER_VERSION, 4, messageBuffer };
+	std::int64_t bytesRead = extraData.size(), toRead = mStreamSizes.cbHeader;
+	SECURITY_STATUS returnValue;
+
+	std::copy(extraData.begin(), extraData.end(), static_cast<std::string::value_type*>(buffer));
+
+	do
 	{
-		checkSSPIReturn(DecryptMessage(&mContextHandle, &descriptor, 0, nullptr));
-	}
-	catch (SocketException &e)
-	{
-		if (e.getErrorCode() == SEC_E_INCOMPLETE_MESSAGE && messageBuffer[1].BufferType == SECBUFFER_MISSING)
-			e.setAdditionalInformation(messageBuffer[1].cbBuffer);
+		if (messageBuffer[1].BufferType == SECBUFFER_MISSING)
+			toRead = messageBuffer[1].cbBuffer;
 
-		throw;
-	}
+		bytesRead += Socket::receive(static_cast<byte*>(buffer) + bytesRead, toRead, 0);
+		messageBuffer[0].pvBuffer = buffer;
+		messageBuffer[0].cbBuffer = bytesRead; //this used to be just message.size(), which assumes that I always receive toRead bytes, which is not always the case and would sometimes cause decrypt errors.
+		messageBuffer[0].BufferType = SECBUFFER_DATA;
 
-	#endif
+		for (std::size_t i = 1; i < sizeof(messageBuffer) / sizeof(*messageBuffer); ++i)
+		{
+			messageBuffer[i].pvBuffer = nullptr;
+			messageBuffer[i].cbBuffer = 0;
+			messageBuffer[i].BufferType = SECBUFFER_EMPTY;
+		}
 
-	return bufferSize;
+		returnValue = DecryptMessage(&mContextHandle, &messageBufferDescriptor, 0, nullptr);
+	} while (returnValue == SEC_E_INCOMPLETE_MESSAGE);
+
+	checkSSPIReturn(returnValue);
+
+	for (decltype(SecBuffer::cbBuffer) i = 0; i < messageBuffer[1].cbBuffer; ++i)
+		static_cast<byte *>(messageBuffer[0].pvBuffer)[i] = static_cast<byte *>(messageBuffer[1].pvBuffer)[i];
+
+	return messageBuffer[1].cbBuffer;
 }
 
 std::int64_t TLSSocket::send(const void *buffer, size_t bufferSize, int flags)
 {
-	#ifdef WIN32
-	if (!mNegotiationCompleted)
+	if (!mContextEstablished)
 		establishSecurityContext();
 
 	SecBuffer secBuffer[4];
@@ -644,9 +610,61 @@ std::int64_t TLSSocket::send(const void *buffer, size_t bufferSize, int flags)
 		for (int i = 0; i < sizeof(secBuffer) / sizeof(*secBuffer) - 1; ++i)
 			Socket::send(secBuffer[i].pvBuffer, secBuffer[i].cbBuffer, flags);
 	}
-	#endif
 
 	return bufferSize;
+}
+
+std::string TLSSocket::establishSecurityContext()
+{
+	if (mContextEstablished)
+		return "";
+
+	std::string extraData;
+	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
+	std::unique_ptr<const CERT_CONTEXT, decltype(CertFreeCertificateContext) *> certificate(nullptr, CertFreeCertificateContext);
+	SCHANNEL_CRED schannelCredential = {};
+	CredHandle credentialsHandle = {};
+	SecHandle contextHandle = {};
+
+	certificateStore.reset(CertOpenSystemStoreA(NULL, mCertificateStore.c_str())/*CertOpenStore(CERT_STORE_PROV_SYSTEM, X509_ASN_ENCODING, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG, L"MY")*/);
+	if (!certificateStore)
+		throw SocketException(GetLastError());
+
+	certificate.reset(CertFindCertificateInStore(certificateStore.get(), X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_A, mCertificateSubject.c_str(), NULL));
+	if (!certificate)
+		throw SocketException(GetLastError());
+
+	auto certPtr = certificate.get();
+
+	schannelCredential.dwVersion = SCHANNEL_CRED_VERSION;
+	schannelCredential.cCreds = 1;
+	schannelCredential.paCred = &certPtr;
+
+	checkSSPIReturn(AcquireCredentialsHandleA(nullptr, const_cast<char*>("Schannel"), mRole == Role::SERVER ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND, nullptr, &schannelCredential, nullptr, nullptr, &credentialsHandle, nullptr));
+
+	try
+	{
+		std::string result = negotiate(credentialsHandle, contextHandle);
+
+		mCredentialsHandle = credentialsHandle;
+		mContextHandle = contextHandle;
+		mContextEstablished = true;
+		return result;
+	}
+	catch (const SocketException&)
+	{
+		DeleteSecurityContext(&contextHandle);
+		FreeCredentialHandle(&credentialsHandle);
+		throw;
+	}
+}
+
+std::size_t TLSSocket::getMaxTLSMessageSize()
+{
+	if (mContextEstablished)
+		return mStreamSizes.cbMaximumMessage;
+	else
+		throw SocketException("A security context must be established before this method can be called");
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

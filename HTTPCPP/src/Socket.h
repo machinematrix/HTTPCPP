@@ -26,7 +26,7 @@ class SocketException : public std::runtime_error
 public:
 	using AdditionalInformationType = std::variant<decltype(SecBuffer::cbBuffer)>;
 private:
-	int mErrorCode;
+	int mErrorCode = 0;
 	AdditionalInformationType mAdditionalInformation;
 public:
 	using std::runtime_error::runtime_error;
@@ -124,21 +124,24 @@ private:
 	SecHandle mContextHandle = {};
 	SecPkgContext_StreamSizes mStreamSizes = {};
 	Role mRole;
-	bool mNegotiationCompleted = false;
+	bool mContextEstablished = false;
 
-	std::string establishSecurityContext();
 	std::string negotiate(CredHandle&, SecHandle&);
 	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 public:
-	TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateSubjecte, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
+	TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 	TLSSocket(TLSSocket&&) noexcept;
 	~TLSSocket() override;
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
 	std::string receive(int flags = 0);
+	//Assumes buffer is big enough to hold a full TLS message
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags = 0) override;
 	std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0) override;
+
+	std::string establishSecurityContext();
+	std::size_t getMaxTLSMessageSize();
 };
 
 bool operator!=(const Socket&, const Socket&) noexcept;
