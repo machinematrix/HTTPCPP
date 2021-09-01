@@ -302,10 +302,15 @@ std::int64_t Socket::send(const void *buffer, size_t bufferSize, int flags)
 	return result;
 }
 
-DescriptorType Socket::get()
+DescriptorType Socket::get() const noexcept
 {
 	return mSocket;
 }
+
+//std::strong_ordering Socket::operator<=>(const Socket &rhs) const noexcept
+//{
+//	return mSocket <=> rhs.mSocket;
+//}
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -672,17 +677,12 @@ std::size_t TLSSocket::getMaxTLSMessageSize()
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-bool operator!=(const Socket &lhs, const Socket &rhs) noexcept
+std::strong_ordering operator<=>(const Socket &lhs, const Socket &rhs)
 {
-	return lhs.mSocket != rhs.mSocket;
+	return lhs.get() <=> rhs.get();
 }
 
-bool operator==(const Socket &lhs, const Socket &rhs) noexcept
+bool operator==(const Socket &lhs, const Socket &rhs)
 {
-	return !(lhs != rhs);
-}
-
-bool operator<(const Socket &lhs, const Socket &rhs) noexcept
-{
-	return lhs.mSocket < rhs.mSocket;
+	return lhs.get() == rhs.get();
 }

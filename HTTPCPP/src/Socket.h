@@ -77,9 +77,6 @@ public:
 
 class Socket
 {
-	friend class SocketPoller;
-	friend bool operator!=(const Socket&, const Socket&) noexcept;
-	friend bool operator<(const Socket&, const Socket&) noexcept;
 	WinsockLoader mLoader;
 protected:
 	DescriptorType mSocket;
@@ -110,7 +107,7 @@ public:
 	virtual std::string receive(int flags = 0);
 	virtual std::int64_t receive(void *buffer, size_t bufferSize, int flags = 0);
 	virtual std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0);
-	DescriptorType get();
+	DescriptorType get() const noexcept;
 };
 
 class TLSSocket : public Socket
@@ -144,8 +141,7 @@ public:
 	std::size_t getMaxTLSMessageSize();
 };
 
-bool operator!=(const Socket&, const Socket&) noexcept;
-bool operator==(const Socket&, const Socket&) noexcept;
-bool operator<(const Socket&, const Socket&) noexcept;
+std::strong_ordering operator<=>(const Socket&, const Socket&);
+bool operator==(const Socket&, const Socket&);
 
 #endif
