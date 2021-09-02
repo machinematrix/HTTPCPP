@@ -32,7 +32,7 @@ namespace
 
 		#ifdef _WIN32
 		LPSTR message;
-		FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, static_cast<DWORD>(code), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message, 0, NULL);
+		FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, static_cast<DWORD>(code), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<LPSTR>(&message), 0, NULL);
 		result = message;
 		LocalFree(message);
 		#elif defined(__linux__)
@@ -329,7 +329,12 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 	PSecPkgInfoA packageInfo;
 	constexpr decltype(packageInfo->cbMaxToken) initialBytesToRead = 16;
 	decltype(packageInfo->cbMaxToken) maxMessage, toRead = initialBytesToRead;
-	ULONG attributes = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
+	ULONG attributes;
+	
+	if (mRole == Role::SERVER)
+		attributes = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
+	else if (mRole == Role::CLIENT)
+		attributes = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_STREAM;
 	
 	if (!mPrincipalName)
 		attributes |= ISC_REQ_MANUAL_CRED_VALIDATION;
