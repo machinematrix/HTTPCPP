@@ -115,7 +115,7 @@ class TLSSocket : public Socket
 public:
 	enum class Role { CLIENT, SERVER };
 private:
-	std::string mCertificateStore, mCertificateSubject;
+	std::string mCertificateStore, mCertificateSubject, mExtraData;
 	std::optional<std::string> mPrincipalName;
 	CredHandle mCredentialsHandle = {};
 	SecHandle mContextHandle = {};
@@ -137,7 +137,7 @@ public:
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags = 0) override;
 	std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0) override;
 
-	std::string establishSecurityContext();
+	void establishSecurityContext();
 	std::size_t getMaxTLSMessageSize();
 };
 

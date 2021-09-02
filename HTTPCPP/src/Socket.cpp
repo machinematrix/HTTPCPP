@@ -330,6 +330,7 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 	constexpr decltype(packageInfo->cbMaxToken) initialBytesToRead = 16;
 	decltype(packageInfo->cbMaxToken) maxMessage, toRead = initialBytesToRead;
 	ULONG attributes = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
+	
 	if (!mPrincipalName)
 		attributes |= ISC_REQ_MANUAL_CRED_VALIDATION;
 
@@ -342,6 +343,7 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 	std::unique_ptr<std::byte[]> outputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
 	std::int64_t bytesRead = 0;
 	SECURITY_STATUS result {};
+	bool firstCall = true;
 
 	do
 	{
@@ -354,7 +356,7 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 		outputBuffer.cbBuffer = maxMessage;
 		outputBuffer.pvBuffer = outputBufferMemory.get();
 		inputBuffer[0].BufferType = SECBUFFER_TOKEN;
-		if (mRole == Role::SERVER || contextHandle.dwLower || contextHandle.dwUpper)
+		if (mRole == Role::SERVER || !firstCall/*contextHandle.dwLower || contextHandle.dwUpper*/)
 		{
 			inputBuffer[0].pvBuffer = inputBufferMemory.get();
 			inputBuffer[0].cbBuffer = bytesRead += Socket::receive(inputBufferMemory.get() + bytesRead, toRead, 0);
@@ -382,10 +384,11 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 			{
 				if (inputBuffer[1].BufferType == SECBUFFER_EXTRA)
 				{
-					std::byte *extreBytesBegin = static_cast<std::byte *>(inputBuffer[0].pvBuffer) + inputBuffer[0].cbBuffer - inputBuffer[1].cbBuffer;
+					//https://docs.microsoft.com/en-us/windows/win32/secauthn/extra-buffers-returned-by-schannel
+					std::byte *extraBytesBegin = static_cast<std::byte *>(inputBuffer[0].pvBuffer) + inputBuffer[0].cbBuffer - inputBuffer[1].cbBuffer;
 					bytesRead = inputBuffer[1].cbBuffer;
-					toRead = 0;
-					std::copy(extreBytesBegin, extreBytesBegin + bytesRead, inputBufferMemory.get());
+					toRead = 0; //Do not read data in the next iteration, just process the extra data read
+					std::copy(extraBytesBegin, extraBytesBegin + bytesRead, inputBufferMemory.get());
 				}
 				else
 				{
@@ -410,6 +413,8 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 				toRead = initialBytesToRead;
 				break;
 		}
+
+		firstCall = false;
 	}
 	while (result == SEC_I_CONTINUE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE || result == SEC_E_INCOMPLETE_MESSAGE);
 
@@ -442,6 +447,7 @@ TLSSocket::TLSSocket(TLSSocket &&other) noexcept
 	:Socket(std::move(other)),
 	mCertificateStore(std::move(other.mCertificateStore)),
 	mCertificateSubject(std::move(other.mCertificateSubject)),
+	mExtraData(std::move(other.mExtraData)),
 	mCredentialsHandle(other.mCredentialsHandle),
 	mContextHandle(other.mContextHandle),
 	mStreamSizes(other.mStreamSizes),
@@ -464,6 +470,7 @@ TLSSocket& TLSSocket::operator=(TLSSocket &&other) noexcept
 	*static_cast<Socket*>(this) = std::move(other);
 	mCertificateStore = std::move(other.mCertificateStore);
 	mCertificateSubject = std::move(other.mCertificateSubject);
+	mExtraData = std::move(other.mExtraData);
 	mCredentialsHandle = other.mCredentialsHandle;
 	other.mCredentialsHandle = CredHandle{};
 	mContextHandle = other.mContextHandle;
@@ -492,18 +499,19 @@ TLSSocket* TLSSocket::accept()
 
 std::string TLSSocket::receive(int flags)
 {
-	std::string result, extraData;
+	std::string result;
 
 	if (!mContextEstablished)
-		extraData = establishSecurityContext();
+		establishSecurityContext();
 
-	std::string message(extraData);
+	std::string message(mExtraData);
 	SecBuffer buffer[4] = {};
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, buffer };
-	std::int64_t bytesRead = extraData.size(), toRead = mStreamSizes.cbHeader;
+	std::int64_t bytesRead = mExtraData.size(), toRead = mStreamSizes.cbHeader;
 	SECURITY_STATUS returnValue;
 
 	message.resize(message.size() + toRead);
+	mExtraData.clear();
 
 	do
 	{
@@ -540,17 +548,17 @@ std::string TLSSocket::receive(int flags)
 std::int64_t TLSSocket::receive(void *buffer, size_t, int flags)
 {
 	using std::byte;
-	std::string extraData;
 
 	if (!mContextEstablished)
-		extraData = establishSecurityContext();
+		establishSecurityContext();
 
 	SecBuffer messageBuffer[4] = {};
 	SecBufferDesc messageBufferDescriptor = { SECBUFFER_VERSION, 4, messageBuffer };
-	std::int64_t bytesRead = extraData.size(), toRead = mStreamSizes.cbHeader;
+	std::int64_t bytesRead = mExtraData.size(), toRead = mStreamSizes.cbHeader;
 	SECURITY_STATUS returnValue;
 
-	std::copy(extraData.begin(), extraData.end(), static_cast<std::string::value_type*>(buffer));
+	std::copy(mExtraData.begin(), mExtraData.end(), static_cast<std::string::value_type *>(buffer));
+	mExtraData.clear();
 
 	do
 	{
@@ -619,10 +627,10 @@ std::int64_t TLSSocket::send(const void *buffer, size_t bufferSize, int flags)
 	return bufferSize;
 }
 
-std::string TLSSocket::establishSecurityContext()
+void TLSSocket::establishSecurityContext()
 {
 	if (mContextEstablished)
-		return "";
+		return;
 
 	std::string extraData;
 	std::unique_ptr<std::remove_pointer<HCERTSTORE>::type, std::function<BOOL __stdcall(HCERTSTORE)>> certificateStore(nullptr, std::bind(CertCloseStore, std::placeholders::_1, CERT_CLOSE_STORE_FORCE_FLAG));
@@ -649,15 +657,15 @@ std::string TLSSocket::establishSecurityContext()
 
 	try
 	{
-		std::string result = negotiate(credentialsHandle, contextHandle);
+		mExtraData = negotiate(credentialsHandle, contextHandle);
 
 		mCredentialsHandle = credentialsHandle;
 		mContextHandle = contextHandle;
 		mContextEstablished = true;
-		return result;
 	}
 	catch (const SocketException&)
 	{
+		mExtraData.clear();
 		DeleteSecurityContext(&contextHandle);
 		FreeCredentialHandle(&credentialsHandle);
 		throw;
