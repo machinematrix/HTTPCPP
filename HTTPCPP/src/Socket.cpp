@@ -77,16 +77,6 @@ int SocketException::getErrorCode() const
 	return mErrorCode;
 }
 
-decltype(SocketException::mAdditionalInformation) SocketException::getAdditionalInformation() const
-{
-	return mAdditionalInformation;
-}
-
-void SocketException::setAdditionalInformation(const AdditionalInformationType &info)
-{
-	mAdditionalInformation = info;
-}
-
 std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> Socket::getAddressInfo(std::string_view address, std::uint16_t port, int flags)
 {
 	std::array<char, 6> strPort = {}; //Long enough for a 16 bit integer, plus a null character.
@@ -307,17 +297,12 @@ DescriptorType Socket::get() const noexcept
 	return mSocket;
 }
 
-//std::strong_ordering Socket::operator<=>(const Socket &rhs) const noexcept
-//{
-//	return mSocket <=> rhs.mSocket;
-//}
-
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &contextHandle)
+std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &contextHandle, std::optional<std::span<std::byte>> initialBuffer = std::optional<std::span<std::byte>> {})
 {
 	//certmgr.msc - certificate store
 	/*unsigned long packageCount;
@@ -336,7 +321,7 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 	else if (mRole == Role::CLIENT)
 		attributes = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_STREAM;
 	
-	if (!mPrincipalName)
+	if (!mPrincipalName && mRole == Role::CLIENT)
 		attributes |= ISC_REQ_MANUAL_CRED_VALIDATION;
 
 	checkSSPIReturn(QuerySecurityPackageInfoA(const_cast<char*>("Schannel"), &packageInfo));
@@ -344,24 +329,29 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 	FreeContextBuffer(packageInfo);
 
 	std::string extraData;
-	std::unique_ptr<std::byte[]> inputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
-	std::unique_ptr<std::byte[]> outputBufferMemory = std::make_unique<std::byte[]>(maxMessage);
+	std::unique_ptr<std::byte[]> inputBufferMemory { std::make_unique<std::byte[]>(maxMessage) };
+	std::unique_ptr<std::byte[]> outputBufferMemory { std::make_unique<std::byte[]>(maxMessage) };
 	std::int64_t bytesRead = 0;
 	SECURITY_STATUS result {};
-	bool firstCall = true;
 
 	do
 	{
 		SecBuffer inputBuffer[2] = {};
 		SecBuffer outputBuffer;
-		SecBufferDesc inputBufferDescriptor = { SECBUFFER_VERSION, 2, inputBuffer };
-		SecBufferDesc outputBufferDescriptor = { SECBUFFER_VERSION, 1, &outputBuffer };
+		SecBufferDesc inputBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 2, .pBuffers = inputBuffer };
+		SecBufferDesc outputBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 1, .pBuffers = &outputBuffer };
 
 		outputBuffer.BufferType = SECBUFFER_TOKEN;
 		outputBuffer.cbBuffer = maxMessage;
 		outputBuffer.pvBuffer = outputBufferMemory.get();
 		inputBuffer[0].BufferType = SECBUFFER_TOKEN;
-		if (mRole == Role::SERVER || !firstCall/*contextHandle.dwLower || contextHandle.dwUpper*/)
+		if (initialBuffer.has_value()) //process data sent by the caller first
+		{
+			inputBuffer[0].pvBuffer = initialBuffer.value().data();
+			inputBuffer[0].cbBuffer = initialBuffer.value().size();
+			initialBuffer = decltype(initialBuffer) {};
+		}
+		else if (mRole == Role::SERVER || contextHandle.dwLower || contextHandle.dwUpper)
 		{
 			inputBuffer[0].pvBuffer = inputBufferMemory.get();
 			inputBuffer[0].cbBuffer = bytesRead += Socket::receive(inputBufferMemory.get() + bytesRead, toRead, 0);
@@ -413,13 +403,14 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 				if (inputBuffer[1].BufferType == SECBUFFER_MISSING)
 					toRead = inputBuffer[1].cbBuffer;
 				break;
+			case SEC_I_NO_RENEGOTIATION:
+				throw SocketException { result };
+				break;
 			default:
 				checkSSPIReturn(result);
 				toRead = initialBytesToRead;
 				break;
 		}
-
-		firstCall = false;
 	}
 	while (result == SEC_I_CONTINUE_NEEDED || result == SEC_I_COMPLETE_AND_CONTINUE || result == SEC_E_INCOMPLETE_MESSAGE);
 
@@ -541,6 +532,15 @@ std::string TLSSocket::receive(int flags)
 		}
 
 		returnValue = DecryptMessage(&mContextHandle, &descriptor, 0, nullptr);
+
+		if (returnValue == SEC_I_RENEGOTIATE)
+		{
+			message = negotiate(mCredentialsHandle, mContextHandle, std::span (static_cast<std::byte *>(buffer[0].pvBuffer), bytesRead));
+			bytesRead = message.size(); //start again
+			toRead = mStreamSizes.cbHeader;
+			message.resize(message.size() + mStreamSizes.cbHeader);
+			returnValue = SEC_E_INCOMPLETE_MESSAGE; //so the loop is not exited
+		}
 	} while (returnValue == SEC_E_INCOMPLETE_MESSAGE);
 
 	checkSSPIReturn(returnValue);
@@ -558,11 +558,11 @@ std::int64_t TLSSocket::receive(void *buffer, size_t, int flags)
 		establishSecurityContext();
 
 	SecBuffer messageBuffer[4] = {};
-	SecBufferDesc messageBufferDescriptor = { SECBUFFER_VERSION, 4, messageBuffer };
+	SecBufferDesc messageBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 4, .pBuffers = messageBuffer };
 	std::int64_t bytesRead = mExtraData.size(), toRead = mStreamSizes.cbHeader;
 	SECURITY_STATUS returnValue;
 
-	std::copy(mExtraData.begin(), mExtraData.end(), static_cast<std::string::value_type *>(buffer));
+	std::copy(mExtraData.begin(), mExtraData.end(), static_cast<std::string::value_type*>(buffer));
 	mExtraData.clear();
 
 	do
@@ -570,7 +570,7 @@ std::int64_t TLSSocket::receive(void *buffer, size_t, int flags)
 		if (messageBuffer[1].BufferType == SECBUFFER_MISSING)
 			toRead = messageBuffer[1].cbBuffer;
 
-		bytesRead += Socket::receive(static_cast<byte*>(buffer) + bytesRead, toRead, 0);
+		bytesRead += Socket::receive(static_cast<byte *>(buffer) + bytesRead, toRead, 0);
 		messageBuffer[0].pvBuffer = buffer;
 		messageBuffer[0].cbBuffer = bytesRead; //this used to be just message.size(), which assumes that I always receive toRead bytes, which is not always the case and would sometimes cause decrypt errors.
 		messageBuffer[0].BufferType = SECBUFFER_DATA;
@@ -583,6 +583,15 @@ std::int64_t TLSSocket::receive(void *buffer, size_t, int flags)
 		}
 
 		returnValue = DecryptMessage(&mContextHandle, &messageBufferDescriptor, 0, nullptr);
+
+		if (returnValue == SEC_I_RENEGOTIATE)
+		{
+			auto extraData = negotiate(mCredentialsHandle, mContextHandle, std::span(static_cast<std::byte *>(buffer), bytesRead));
+			std::copy(extraData.begin(), extraData.end(), static_cast<std::string::value_type*>(buffer));
+			bytesRead = extraData.size(); //start again
+			toRead = mStreamSizes.cbHeader;
+			returnValue = SEC_E_INCOMPLETE_MESSAGE; //so the loop is not exited
+		}
 	} while (returnValue == SEC_E_INCOMPLETE_MESSAGE);
 
 	checkSSPIReturn(returnValue);
@@ -617,11 +626,11 @@ std::int64_t TLSSocket::send(const void *buffer, size_t bufferSize, int flags)
 	while (sent < bufferSize)
 	{
 		auto bytesToSend = std::min<size_t>(mStreamSizes.cbMaximumMessage, bufferSize - sent);
-		std::string message(bytesToSend, '\0');
+		auto message { std::make_unique<std::byte[]>(bytesToSend) };
 
-		secBuffer[1].pvBuffer = message.data();
+		secBuffer[1].pvBuffer = message.get();
 		secBuffer[1].cbBuffer = bytesToSend;
-		memcpy(message.data(), static_cast<const std::byte*>(buffer) + sent, bytesToSend);
+		std::copy(static_cast<const std::byte *>(buffer) + sent, static_cast<const std::byte *>(buffer) + sent + bytesToSend, message.get());
 		checkSSPIReturn(EncryptMessage(&mContextHandle, 0, &descriptor, 0));
 		sent += bytesToSend;
 
@@ -663,7 +672,6 @@ void TLSSocket::establishSecurityContext()
 	try
 	{
 		mExtraData = negotiate(credentialsHandle, contextHandle);
-
 		mCredentialsHandle = credentialsHandle;
 		mContextHandle = contextHandle;
 		mContextEstablished = true;
@@ -677,10 +685,49 @@ void TLSSocket::establishSecurityContext()
 	}
 }
 
+void TLSSocket::requestRenegotiate()
+{
+	if (!mContextEstablished)
+		throw SocketException("A context must be established before it can be renegotiated");
+
+	PSecPkgInfoA packageInfo;
+	checkSSPIReturn(QuerySecurityPackageInfoA(const_cast<char *>("Schannel"), &packageInfo));
+	auto maxToken = packageInfo->cbMaxToken;
+	FreeContextBuffer(packageInfo);
+
+	auto alertBufferMemory { std::make_unique<std::byte[]>(maxToken) }, outputBufferMemory { std::make_unique<std::byte[]>(maxToken) };
+	SecBuffer outputBuffer[2] = {
+		{ .cbBuffer = maxToken, .BufferType = SECBUFFER_TOKEN, .pvBuffer = outputBufferMemory.get() },
+		{ .cbBuffer = maxToken, .BufferType = SECBUFFER_ALERT, .pvBuffer = alertBufferMemory.get() }
+	};
+	SecBufferDesc outputBufferDescriptor { .ulVersion = SECBUFFER_VERSION, .cBuffers = 2, .pBuffers = outputBuffer };
+	SECURITY_STATUS returnValue {};
+	ULONG attributes = 0;
+
+	if (mRole == Role::SERVER)
+		attributes = ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_STREAM;
+	else if (mRole == Role::CLIENT)
+		attributes = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_STREAM;
+
+	if (!mPrincipalName && mRole == Role::CLIENT)
+		attributes |= ISC_REQ_MANUAL_CRED_VALIDATION;
+
+	if (mRole == Role::SERVER)
+		returnValue = AcceptSecurityContext(&mCredentialsHandle, &mContextHandle, nullptr, attributes, 0, nullptr, &outputBufferDescriptor, &attributes, nullptr);
+	else if (mRole == Role::CLIENT)
+		returnValue = InitializeSecurityContextA(&mCredentialsHandle, &mContextHandle, mPrincipalName ? mPrincipalName.value().data() : nullptr, attributes, 0, 0, nullptr, 0, nullptr, &outputBufferDescriptor, &attributes, nullptr);
+
+	std::string_view alert { static_cast<char*>(outputBuffer[1].pvBuffer), outputBuffer[1].cbBuffer };
+
+	checkSSPIReturn(returnValue);
+	Socket::send(outputBuffer[0].pvBuffer, outputBuffer[0].cbBuffer);
+	mExtraData = negotiate(mCredentialsHandle, mContextHandle);
+}
+
 std::size_t TLSSocket::getMaxTLSMessageSize()
 {
 	if (mContextEstablished)
-		return mStreamSizes.cbMaximumMessage;
+		return static_cast<std::size_t>(mStreamSizes.cbHeader) + mStreamSizes.cbMaximumMessage + mStreamSizes.cbTrailer;
 	else
 		throw SocketException("A security context must be established before this method can be called");
 }

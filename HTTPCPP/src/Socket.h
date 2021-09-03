@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <variant>
 #include <optional>
+#include <span>
 
 #ifdef _WIN32
 #define SECURITY_WIN32
@@ -23,17 +24,12 @@ using DescriptorType = int;
 
 class SocketException : public std::runtime_error
 {
-public:
-	using AdditionalInformationType = std::variant<decltype(SecBuffer::cbBuffer)>;
 private:
 	int mErrorCode = 0;
-	AdditionalInformationType mAdditionalInformation;
 public:
 	using std::runtime_error::runtime_error;
 	SocketException(int code);
 	int getErrorCode() const;
-	AdditionalInformationType getAdditionalInformation() const;
-	void setAdditionalInformation(const AdditionalInformationType &info);
 };
 
 //calls WSAStartup on construction and WSACleanup on destruction
@@ -80,8 +76,8 @@ class Socket
 	WinsockLoader mLoader;
 protected:
 	DescriptorType mSocket;
-	int mDomain, mType, mProtocol;
 private:
+	int mDomain, mType, mProtocol;
 	bool mNonBlocking = false;
 
 	std::unique_ptr<addrinfo, decltype(freeaddrinfo)*> getAddressInfo(std::string_view address, std::uint16_t port, int flags);
@@ -123,7 +119,7 @@ private:
 	Role mRole;
 	bool mContextEstablished = false;
 
-	std::string negotiate(CredHandle&, SecHandle&);
+	std::string negotiate(CredHandle&, SecHandle&, std::optional<std::span<std::byte>>);
 	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 public:
 	TLSSocket(int domain, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
@@ -138,6 +134,7 @@ public:
 	std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0) override;
 
 	void establishSecurityContext();
+	void requestRenegotiate();
 	std::size_t getMaxTLSMessageSize();
 };
 
