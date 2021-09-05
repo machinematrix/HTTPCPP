@@ -119,6 +119,8 @@ private:
 	Role mRole;
 	bool mContextEstablished = false;
 
+	CredHandle acquireCredentials(std::string_view certificateStore, std::string_view certificateSubject) const;
+	unsigned long getContextAttributes() const noexcept;
 	std::string negotiate(CredHandle&, SecHandle&, std::optional<std::span<std::byte>>);
 	TLSSocket(DescriptorType, std::string_view certificateStore, std::string_view certificateSubject, Role role = Role::SERVER, const std::optional<std::string> &principalName = std::optional<std::string>());
 public:
@@ -128,13 +130,14 @@ public:
 	TLSSocket& operator=(TLSSocket&&) noexcept;
 
 	TLSSocket* accept() override;
-	std::string receive(int flags = 0);
+	std::string receive(int flags = 0) override;
 	//Assumes buffer is big enough to hold a full TLS message
 	std::int64_t receive(void *buffer, size_t bufferSize, int flags = 0) override;
 	std::int64_t send(const void *buffer, size_t bufferSize, int flags = 0) override;
 
 	void establishSecurityContext();
 	void requestRenegotiate();
+	void requestRenegotiate(std::string_view certificateStore, std::string_view certificateSubject);
 	std::size_t getMaxTLSMessageSize();
 };
 
