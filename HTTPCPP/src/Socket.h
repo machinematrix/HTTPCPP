@@ -28,6 +28,10 @@ private:
 	int mErrorCode = 0;
 public:
 	using std::runtime_error::runtime_error;
+	SocketException(const SocketException&) = default;
+	SocketException(SocketException&&) = default;
+	SocketException& operator=(const SocketException &) = default;
+	SocketException& operator=(SocketException&&) = default;
 	SocketException(int code);
 	int getErrorCode() const;
 };
@@ -139,6 +143,7 @@ public:
 	void requestRenegotiate();
 	void requestRenegotiate(std::string_view certificateStore, std::string_view certificateSubject);
 	std::size_t getMaxTLSMessageSize();
+	void shutdownConnection();
 };
 
 std::strong_ordering operator<=>(const Socket&, const Socket&);

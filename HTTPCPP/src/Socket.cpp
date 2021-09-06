@@ -423,6 +423,7 @@ std::string TLSSocket::negotiate(CredHandle &credentialsHandle, SecHandle &conte
 					bytesToRead = inputBuffer[1].cbBuffer;
 				break;
 			case SEC_I_NO_RENEGOTIATION:
+			case SEC_I_CONTEXT_EXPIRED:
 				throw SocketException { result };
 				break;
 			default:
@@ -511,12 +512,10 @@ TLSSocket* TLSSocket::accept()
 
 std::string TLSSocket::receive(int flags)
 {
-	std::string result;
-
 	if (!mContextEstablished)
 		establishSecurityContext();
 
-	std::string message(mExtraData);
+	std::string result, message(mExtraData);
 	SecBuffer buffer[4] = {};
 	SecBufferDesc descriptor = { SECBUFFER_VERSION, 4, buffer };
 	std::int64_t bytesRead = mExtraData.size(), toRead = mStreamSizes.cbHeader;
@@ -540,12 +539,7 @@ std::string TLSSocket::receive(int flags)
 		buffer[0].cbBuffer = message.size() - (toRead - read); //this used to be just message.size(), which assumes that I always receive toRead bytes, which is not always the case and would sometimes cause decrypt errors.
 		buffer[0].BufferType = SECBUFFER_DATA;
 
-		for (std::size_t i = 1; i < sizeof(buffer) / sizeof(*buffer); ++i)
-		{
-			buffer[i].pvBuffer = nullptr;
-			buffer[i].cbBuffer = 0;
-			buffer[i].BufferType = SECBUFFER_EMPTY;
-		}
+		std::fill(std::begin(buffer) + 1, std::end(buffer), SecBuffer { .cbBuffer = 0, .BufferType = SECBUFFER_EMPTY, .pvBuffer = nullptr });
 
 		returnValue = DecryptMessage(&mContextHandle, &descriptor, 0, nullptr);
 
@@ -556,6 +550,16 @@ std::string TLSSocket::receive(int flags)
 			toRead = mStreamSizes.cbHeader;
 			message.resize(message.size() + mStreamSizes.cbHeader);
 			returnValue = SEC_E_INCOMPLETE_MESSAGE; //so the loop is not exited
+		}
+		else if (returnValue == SEC_I_CONTEXT_EXPIRED)
+		{
+			DWORD shutdown = SCHANNEL_SHUTDOWN;
+			SecBuffer shutdownBuffer = { .cbBuffer = sizeof(shutdown), .BufferType = SECBUFFER_TOKEN, .pvBuffer = &shutdown };
+			SecBufferDesc shutdownBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 1, .pBuffers = &shutdownBuffer };
+
+			checkSSPIReturn(ApplyControlToken(&mContextHandle, &shutdownBufferDescriptor));
+			negotiate(mCredentialsHandle, mContextHandle, std::span(static_cast<std::byte *>(buffer[0].pvBuffer), bytesRead));
+			throw SocketException { SEC_I_CONTEXT_EXPIRED };
 		}
 	} while (returnValue == SEC_E_INCOMPLETE_MESSAGE);
 
@@ -608,11 +612,21 @@ std::int64_t TLSSocket::receive(void *buffer, size_t, int flags)
 			bytesToRead = mStreamSizes.cbHeader;
 			returnValue = SEC_E_INCOMPLETE_MESSAGE; //so the loop is not exited
 		}
+		else if (returnValue == SEC_I_CONTEXT_EXPIRED)
+		{
+			DWORD shutdown = SCHANNEL_SHUTDOWN;
+			SecBuffer shutdownBuffer = { .cbBuffer = sizeof(shutdown), .BufferType = SECBUFFER_TOKEN, .pvBuffer = &shutdown };
+			SecBufferDesc shutdownBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 1, .pBuffers = &shutdownBuffer };
+
+			checkSSPIReturn(ApplyControlToken(&mContextHandle, &shutdownBufferDescriptor));
+			negotiate(mCredentialsHandle, mContextHandle, std::span(static_cast<std::byte *>(messageBuffer[0].pvBuffer), bytesRead));
+			throw SocketException { SEC_I_CONTEXT_EXPIRED };
+		}
 	} while (returnValue == SEC_E_INCOMPLETE_MESSAGE);
 
 	checkSSPIReturn(returnValue);
 
-	for (decltype(SecBuffer::cbBuffer) i = 0; i < messageBuffer[1].cbBuffer; ++i)
+	for (decltype(SecBuffer::cbBuffer) i = 0; i < messageBuffer[1].cbBuffer; ++i) //Move the bytes of the decrypted message to the beginning of the buffer
 		static_cast<byte *>(messageBuffer[0].pvBuffer)[i] = static_cast<byte *>(messageBuffer[1].pvBuffer)[i];
 
 	return messageBuffer[1].cbBuffer;
@@ -683,6 +697,7 @@ void TLSSocket::establishSecurityContext()
 	}
 }
 
+//https://docs.microsoft.com/en-us/windows/win32/secauthn/renegotiating-an-schannel-connection
 void TLSSocket::requestRenegotiate()
 {
 	if (!mContextEstablished)
@@ -739,6 +754,28 @@ std::size_t TLSSocket::getMaxTLSMessageSize()
 		return static_cast<std::size_t>(mStreamSizes.cbHeader) + mStreamSizes.cbMaximumMessage + mStreamSizes.cbTrailer;
 	else
 		throw SocketException("A security context must be established before this method can be called");
+}
+
+//https://docs.microsoft.com/en-us/windows/win32/secauthn/shutting-down-an-schannel-connection
+void TLSSocket::shutdownConnection()
+{
+	DWORD shutdown = SCHANNEL_SHUTDOWN;
+	SecBuffer shutdownBuffer = { .cbBuffer = sizeof(shutdown), .BufferType = SECBUFFER_TOKEN, .pvBuffer = &shutdown };
+	SecBufferDesc shutdownBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 1, .pBuffers = &shutdownBuffer };
+
+	if (!mContextEstablished)
+		throw SocketException("A security context must be established before it can be shut down");
+
+	checkSSPIReturn(ApplyControlToken(&mContextHandle, &shutdownBufferDescriptor));
+	try
+	{
+		requestRenegotiate();
+	}
+	catch (const SocketException &e)
+	{
+		if (e.getErrorCode() != SEC_I_CONTEXT_EXPIRED)
+			throw;
+	}
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
