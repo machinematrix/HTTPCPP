@@ -759,8 +759,8 @@ std::size_t TLSSocket::getMaxTLSMessageSize()
 //https://docs.microsoft.com/en-us/windows/win32/secauthn/shutting-down-an-schannel-connection
 void TLSSocket::shutdownConnection()
 {
-	DWORD shutdown = SCHANNEL_SHUTDOWN;
-	SecBuffer shutdownBuffer = { .cbBuffer = sizeof(shutdown), .BufferType = SECBUFFER_TOKEN, .pvBuffer = &shutdown };
+	DWORD shutdownToken = SCHANNEL_SHUTDOWN;
+	SecBuffer shutdownBuffer = { .cbBuffer = sizeof(shutdownToken), .BufferType = SECBUFFER_TOKEN, .pvBuffer = &shutdownToken };
 	SecBufferDesc shutdownBufferDescriptor = { .ulVersion = SECBUFFER_VERSION, .cBuffers = 1, .pBuffers = &shutdownBuffer };
 
 	if (!mContextEstablished)
